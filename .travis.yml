@@ -10,6 +10,7 @@ env:
   global:
   - PATH=$GOROOT/bin:$GOPATH/bin:$PATH
   matrix:
+  - TARGET=386
   - TARGET=amd64
 #  - TARGET=arm
 #  - TARGET=arm64
@@ -36,6 +37,16 @@ script:
    else
      GOARCH="${TARGET}" ./build_linux.sh
    fi
+
+deploy:
+  # Release on versioned tag (e.g. v1.0)
+  - provider: script
+    #skip_cleanup: true
+    script: curl -sL https://git.io/goreleaser | bash
+    on:
+      tags: true
+      all_branches: true
+      condition: "$TRAVIS_TAG =~ ^v[0-9].*$"
 
 notifications:
   email: false
