@@ -10,12 +10,12 @@ source ./build_linux.sh
 
 echo "Running tests"
 
-GINKGO_FLAGS="-p --randomizeAllSpecs --randomizeSuites --failOnPending --progress  --skipPackage=pkg/hns"
+GINKGO_FLAGS="-p --randomizeAllSpecs --randomizeSuites --failOnPending --progress --skipPackage=gopath"
 
 # user has not provided PKG override
 if [ -z "$PKG" ]; then
   GINKGO_FLAGS="$GINKGO_FLAGS -r ."
-  LINT_TARGETS="./..."
+  LINT_TARGETS="./cmd/..."
 
 # user has provided PKG override
 else
@@ -23,7 +23,7 @@ else
   LINT_TARGETS="$PKG"
 fi
 
-echo sudo -E bash -c "umask 0; cd ${GOPATH}/src/${REPO_PATH}; PATH=${GOROOT}/bin:$(pwd)/bin:${PATH} ginkgo ${GINKGO_FLAGS}"
+sudo -E bash -c "umask 0; cd ${GOPATH}/src/${REPO_PATH}; PATH=${GOROOT}/bin:$(pwd)/bin:${PATH} ginkgo ${GINKGO_FLAGS}"
 
 cd ${GOPATH}/src/${REPO_PATH};
 echo "Checking gofmt..."

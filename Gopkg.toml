@@ -30,10 +30,6 @@
   branch = "master"
 
 [[constraint]]
-  name = "github.com/containernetworking/plugins"
-  branch = "master"
-
-[[constraint]]
   name = "github.com/onsi/ginkgo"
   version = "1.8.0"
 

@@ -15,27 +15,84 @@
 package main
 
 import (
-	//	"fmt" //XXX
+	"fmt" //XXX
+	"net"
+	"os"
 	"testing"
 
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types/current"
-	//	"github.com/containernetworking/plugins/pkg/ns"
+	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/containernetworking/plugins/pkg/testutils"
+
+	"github.com/vishvananda/netlink"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
 
-// ginkgo -p --randomizeAllSpecs --randomizeSuites --failOnPending --progress -r .
+// ginkgo -p --randomizeAllSpecs --randomizeSuites --failOnPending --progress -r ./cmd/...
 
 func TestRouteOverwrite(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "RouteOverwrite")
 }
 
+// helper function
+
+func testAddRoute(link netlink.Link, ip net.IP, mask net.IPMask, gw net.IP) error {
+	dst := &net.IPNet{
+		IP:   ip,
+		Mask: mask,
+	}
+	route := netlink.Route{LinkIndex: link.Attrs().Index, Dst: dst, Gw: gw}
+	err := netlink.RouteAdd(&route)
+	return err
+}
+
+func testAddAddr(link netlink.Link, ip net.IP, mask net.IPMask) error {
+	var address = &net.IPNet{IP: ip, Mask: mask}
+	var addr = &netlink.Addr{IPNet: address}
+	err := netlink.AddrAdd(link, addr)
+	return err
+}
+
+//func testHasRoute
+
 var _ = Describe("route-overwrite operations by conf", func() {
 	const IFNAME string = "dummy0"
+	var originalNS ns.NetNS
+	var targetNS ns.NetNS
+
+	BeforeEach(func() {
+		// Create a new NetNS so we don't modify the host
+		var err error
+		originalNS, err = testutils.NewNS()
+		Expect(err).NotTo(HaveOccurred())
+
+		targetNS, err = testutils.NewNS()
+		Expect(err).NotTo(HaveOccurred())
+
+		err = targetNS.Do(func(ns.NetNS) error {
+			defer GinkgoRecover()
+
+			err = netlink.LinkAdd(&netlink.Dummy{
+				LinkAttrs: netlink.LinkAttrs{
+					Name: IFNAME,
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			_, err = netlink.LinkByName(IFNAME)
+			Expect(err).NotTo(HaveOccurred())
+			return nil
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+	})
+
+	AfterEach(func() {
+		Expect(originalNS.Close()).To(Succeed())
+	})
 
 	It("passes prevResult through unchanged", func() {
 		conf := []byte(`{
@@ -56,10 +113,6 @@ var _ = Describe("route-overwrite operations by conf", func() {
 		],
                 "routes": [
                   {
-                    "dst": "0.0.0.0/0",
-                    "gw": "10.0.0.1"
-                  },
-                  {
                     "dst": "30.0.0.0/24"
                   },
                   {
@@ -72,229 +125,430 @@ var _ = Describe("route-overwrite operations by conf", func() {
 
 		args := &skel.CmdArgs{
 			ContainerID: "dummy",
-			Netns:       "",
+			Netns:       targetNS.Path(),
 			IfName:      IFNAME,
 			StdinData:   conf,
 		}
 
-		defer GinkgoRecover()
+		// set address/route as fakeCNI plugin
+		err := targetNS.Do(func(ns.NetNS) error {
+			defer GinkgoRecover()
+			link, err := netlink.LinkByName(IFNAME)
+			Expect(err).NotTo(HaveOccurred())
+			err = netlink.LinkSetUp(link)
+			Expect(err).NotTo(HaveOccurred())
 
-		r, _, err := testutils.CmdAddWithArgs(args, func() error {
-			return cmdAdd(args)
+			// addr 10.0.0.2/24
+			err = testAddAddr(link, net.IPv4(10, 0, 0, 2), net.CIDRMask(24, 32))
+			Expect(err).NotTo(HaveOccurred())
+
+			// add default gateway into IFNAME
+			err = testAddRoute(link,
+				net.IPv4(0, 0, 0, 0), net.CIDRMask(0, 0),
+				net.IPv4(10, 0, 0, 1))
+			Expect(err).NotTo(HaveOccurred())
+
+			//"dst": "30.0.0.0/24"
+			err = testAddRoute(link,
+				net.IPv4(30, 0, 0, 0), net.CIDRMask(24, 32),
+				net.IPv4(10, 0, 0, 1))
+			Expect(err).NotTo(HaveOccurred())
+
+			// "dst": "20.0.0.0/24", "gw": "10.0.0.254"
+			err = testAddRoute(link,
+				net.IPv4(20, 0, 0, 0), net.CIDRMask(24, 32),
+				net.IPv4(10, 0, 0, 254))
+			Expect(err).NotTo(HaveOccurred())
+
+			return nil
 		})
 		Expect(err).NotTo(HaveOccurred())
 
-		result, err := current.GetResult(r)
-		Expect(err).NotTo(HaveOccurred())
+		err = originalNS.Do(func(ns.NetNS) error {
+			defer GinkgoRecover()
+			var result *current.Result
 
-		Expect(len(result.Interfaces)).To(Equal(1))
-		Expect(result.Interfaces[0].Name).To(Equal(IFNAME))
-		Expect(len(result.IPs)).To(Equal(1))
-		Expect(result.IPs[0].Address.String()).To(Equal("10.0.0.2/24"))
-		Expect(result.Routes[0].Dst.String()).To(Equal("0.0.0.0/0"))
-		Expect(result.Routes[0].GW.String()).To(Equal("10.0.0.1"))
-		Expect(result.Routes[1].Dst.String()).To(Equal("30.0.0.0/24"))
-		Expect(result.Routes[1].GW).To(BeNil())
-		Expect(result.Routes[2].Dst.String()).To(Equal("20.0.0.0/24"))
-		Expect(result.Routes[2].GW.String()).To(Equal("10.0.0.254"))
+			r, _, err := testutils.CmdAddWithArgs(args, func() error {
+				return cmdAdd(args)
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			result, err = current.GetResult(r)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(len(result.Interfaces)).To(Equal(1))
+			Expect(result.Interfaces[0].Name).To(Equal(IFNAME))
+			Expect(len(result.IPs)).To(Equal(1))
+			Expect(result.IPs[0].Address.String()).To(Equal("10.0.0.2/24"))
+			Expect(result.Routes[0].Dst.String()).To(Equal("30.0.0.0/24"))
+			Expect(result.Routes[0].GW).To(BeNil())
+			Expect(result.Routes[1].Dst.String()).To(Equal("20.0.0.0/24"))
+			Expect(result.Routes[1].GW.String()).To(Equal("10.0.0.254"))
+
+			return nil
+		})
+
+		// check route info
+		err = targetNS.Do(func(ns.NetNS) error {
+			defer GinkgoRecover()
+
+			link, err := netlink.LinkByName(IFNAME)
+			Expect(err).NotTo(HaveOccurred())
+
+			// FAMILY_ALL for all, but use v4
+			routes, _ := netlink.RouteList(link, netlink.FAMILY_V4)
+			fmt.Fprintf(os.Stderr, "routes: %v\n", routes) // XXX
+			Expect(len(routes)).To(Equal(4))               // default + add2 + interface route
+			return nil
+		})
 
 		Expect(err).NotTo(HaveOccurred())
 	})
 
 	It("check flushroutes clears all routes", func() {
 		conf := []byte(`{
-	"name": "test",
-	"type": "route-overwrite",
-	"cniVersion": "0.3.1",
-        "flushroutes": true,
-	"prevResult": {
-		"interfaces": [
-			{"name": "dummy0", "sandbox":"netns"}
-		],
-		"ips": [
-			{
-				"version": "4",
-				"address": "10.0.0.2/24",
-				"gateway": "10.0.0.1",
-				"interface": 0
-			}
-		],
-                "routes": [
-                  {
-                    "dst": "0.0.0.0/0",
-                    "gw": "10.0.0.1"
-                  },
-                  {
-                    "dst": "30.0.0.0/24"
-                  },
-                  {
-                    "dst": "20.0.0.0/24",
-                    "gw": "10.0.0.254"
-                  }
-		]
-	}
-}`)
+	   	"name": "test",
+	   	"type": "route-overwrite",
+	   	"cniVersion": "0.3.1",
+	           "flushroutes": true,
+	   	"prevResult": {
+	   		"interfaces": [
+	   			{"name": "dummy0", "sandbox":"netns"}
+	   		],
+	   		"ips": [
+	   			{
+	   				"version": "4",
+	   				"address": "10.0.0.2/24",
+	   				"gateway": "10.0.0.1",
+	   				"interface": 0
+	   			}
+	   		],
+	                   "routes": [
+	                     {
+	                       "dst": "0.0.0.0/0",
+	                       "gw": "10.0.0.1"
+	                     },
+	                     {
+	                       "dst": "30.0.0.0/24"
+	                     },
+	                     {
+	                       "dst": "20.0.0.0/24",
+	                       "gw": "10.0.0.254"
+	                     }
+	   		]
+	   	}
+	   }`)
 
 		args := &skel.CmdArgs{
 			ContainerID: "dummy",
-			Netns:       "",
+			Netns:       targetNS.Path(),
 			IfName:      IFNAME,
 			StdinData:   conf,
 		}
 
-		defer GinkgoRecover()
+		// set address/route as fakeCNI plugin
+		err := targetNS.Do(func(ns.NetNS) error {
+			defer GinkgoRecover()
+			link, err := netlink.LinkByName(IFNAME)
+			Expect(err).NotTo(HaveOccurred())
+			err = netlink.LinkSetUp(link)
+			Expect(err).NotTo(HaveOccurred())
 
-		r, _, err := testutils.CmdAddWithArgs(args, func() error {
-			return cmdAdd(args)
+			// addr 10.0.0.2/24
+			err = testAddAddr(link, net.IPv4(10, 0, 0, 2), net.CIDRMask(24, 32))
+			Expect(err).NotTo(HaveOccurred())
+
+			// add default gateway into IFNAME
+			err = testAddRoute(link,
+				net.IPv4(0, 0, 0, 0), net.CIDRMask(0, 0),
+				net.IPv4(10, 0, 0, 1))
+			Expect(err).NotTo(HaveOccurred())
+
+			//"dst": "30.0.0.0/24"
+			err = testAddRoute(link,
+				net.IPv4(30, 0, 0, 0), net.CIDRMask(24, 32),
+				net.IPv4(10, 0, 0, 1))
+			Expect(err).NotTo(HaveOccurred())
+
+			// "dst": "20.0.0.0/24", "gw": "10.0.0.254"
+			err = testAddRoute(link,
+				net.IPv4(20, 0, 0, 0), net.CIDRMask(24, 32),
+				net.IPv4(10, 0, 0, 254))
+			Expect(err).NotTo(HaveOccurred())
+
+			return nil
 		})
 		Expect(err).NotTo(HaveOccurred())
 
-		result, err := current.GetResult(r)
-		Expect(err).NotTo(HaveOccurred())
+		err = originalNS.Do(func(ns.NetNS) error {
+			defer GinkgoRecover()
+			var result *current.Result
 
-		Expect(len(result.Interfaces)).To(Equal(1))
-		Expect(result.Interfaces[0].Name).To(Equal(IFNAME))
-		Expect(len(result.IPs)).To(Equal(1))
-		Expect(result.IPs[0].Address.String()).To(Equal("10.0.0.2/24"))
-		Expect(result.Routes).To(BeNil())
+			r, _, err := testutils.CmdAddWithArgs(args, func() error {
+				return cmdAdd(args)
+			})
+			Expect(err).NotTo(HaveOccurred())
 
-		Expect(err).NotTo(HaveOccurred())
+			result, err = current.GetResult(r)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(len(result.Interfaces)).To(Equal(1))
+			Expect(result.Interfaces[0].Name).To(Equal(IFNAME))
+			Expect(len(result.IPs)).To(Equal(1))
+			Expect(result.IPs[0].Address.String()).To(Equal("10.0.0.2/24"))
+			Expect(result.Routes).To(BeNil())
+
+			Expect(err).NotTo(HaveOccurred())
+
+			return nil
+		})
+		// XXX: need to check routing table
+
 	})
 
 	It("check delroutes works", func() {
 		conf := []byte(`{
-	"name": "test",
-	"type": "route-overwrite",
-	"cniVersion": "0.3.1",
-        "delroutes": [ { "dst": "0.0.0.0/0" }, 
-                       { "dst": "20.0.0.0/24" } ],
-	"prevResult": {
-		"interfaces": [
-			{"name": "dummy0", "sandbox":"netns"}
-		],
-		"ips": [
-			{
-				"version": "4",
-				"address": "10.0.0.2/24",
-				"gateway": "10.0.0.1",
-				"interface": 0
-			}
-		],
-                "routes": [
-                  {
-                    "dst": "0.0.0.0/0",
-                    "gw": "10.0.0.1"
-                  },
-                  {
-                    "dst": "30.0.0.0/24"
-                  },
-                  {
-                    "dst": "20.0.0.0/24",
-                    "gw": "10.0.0.254"
-                  }
-		]
-	}
-}`)
+	   	"name": "test",
+	   	"type": "route-overwrite",
+	   	"cniVersion": "0.3.1",
+	           "delroutes": [ { "dst": "0.0.0.0/0" },
+	                          { "dst": "20.0.0.0/24" } ],
+	   	"prevResult": {
+	   		"interfaces": [
+	   			{"name": "dummy0", "sandbox":"netns"}
+	   		],
+	   		"ips": [
+	   			{
+	   				"version": "4",
+	   				"address": "10.0.0.2/24",
+	   				"gateway": "10.0.0.1",
+	   				"interface": 0
+	   			}
+	   		],
+	                   "routes": [
+	                     {
+	                       "dst": "0.0.0.0/0",
+	                       "gw": "10.0.0.1"
+	                     },
+	                     {
+	                       "dst": "30.0.0.0/24"
+	                     },
+	                     {
+	                       "dst": "20.0.0.0/24",
+	                       "gw": "10.0.0.254"
+	                     }
+	   		]
+	   	}
+	   }`)
 
 		args := &skel.CmdArgs{
 			ContainerID: "dummy",
-			Netns:       "",
+			Netns:       targetNS.Path(),
 			IfName:      IFNAME,
 			StdinData:   conf,
 		}
 
-		defer GinkgoRecover()
+		// set address/route as fakeCNI plugin
+		err := targetNS.Do(func(ns.NetNS) error {
+			defer GinkgoRecover()
+			link, err := netlink.LinkByName(IFNAME)
+			Expect(err).NotTo(HaveOccurred())
+			err = netlink.LinkSetUp(link)
+			Expect(err).NotTo(HaveOccurred())
 
-		r, _, err := testutils.CmdAddWithArgs(args, func() error {
-			return cmdAdd(args)
+			// addr 10.0.0.2/24
+			err = testAddAddr(link, net.IPv4(10, 0, 0, 2), net.CIDRMask(24, 32))
+			Expect(err).NotTo(HaveOccurred())
+
+			// add default gateway into IFNAME
+			err = testAddRoute(link,
+				net.IPv4(0, 0, 0, 0), net.CIDRMask(0, 0),
+				net.IPv4(10, 0, 0, 1))
+			Expect(err).NotTo(HaveOccurred())
+
+			//"dst": "30.0.0.0/24"
+			err = testAddRoute(link,
+				net.IPv4(30, 0, 0, 0), net.CIDRMask(24, 32),
+				net.IPv4(10, 0, 0, 1))
+			Expect(err).NotTo(HaveOccurred())
+
+			// "dst": "20.0.0.0/24", "gw": "10.0.0.254"
+			err = testAddRoute(link,
+				net.IPv4(20, 0, 0, 0), net.CIDRMask(24, 32),
+				net.IPv4(10, 0, 0, 254))
+			Expect(err).NotTo(HaveOccurred())
+
+			return nil
 		})
 		Expect(err).NotTo(HaveOccurred())
 
-		result, err := current.GetResult(r)
-		Expect(err).NotTo(HaveOccurred())
+		err = originalNS.Do(func(ns.NetNS) error {
+			defer GinkgoRecover()
+			var result *current.Result
 
-		Expect(len(result.Interfaces)).To(Equal(1))
-		Expect(result.Interfaces[0].Name).To(Equal(IFNAME))
-		Expect(len(result.IPs)).To(Equal(1))
-		Expect(result.IPs[0].Address.String()).To(Equal("10.0.0.2/24"))
-		Expect(result.Routes[0].Dst.String()).To(Equal("30.0.0.0/24"))
-		Expect(result.Routes[0].GW).To(BeNil())
+			r, _, err := testutils.CmdAddWithArgs(args, func() error {
+				return cmdAdd(args)
+			})
+			Expect(err).NotTo(HaveOccurred())
 
-		Expect(err).NotTo(HaveOccurred())
+			result, err = current.GetResult(r)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(len(result.Interfaces)).To(Equal(1))
+			Expect(result.Interfaces[0].Name).To(Equal(IFNAME))
+			Expect(len(result.IPs)).To(Equal(1))
+			Expect(result.IPs[0].Address.String()).To(Equal("10.0.0.2/24"))
+			Expect(result.Routes[0].Dst.String()).To(Equal("30.0.0.0/24"))
+			Expect(result.Routes[0].GW).To(BeNil())
+
+			return nil
+		})
+
+		// XXX: need to check routing table
 	})
 
 	It("check addroutes works", func() {
 		conf := []byte(`{
-	"name": "test",
-	"type": "route-overwrite",
-	"cniVersion": "0.3.1",
-        "delroutes": [ { "dst": "0.0.0.0/0" }, 
-                       { "dst": "20.0.0.0/24" } ],
-        "addroutes": [ { "dst": "0.0.0.0/0", "gw": "10.0.0.254" }, 
-                       { "dst": "20.0.0.0/24" } ],
-	"prevResult": {
-		"interfaces": [
-			{"name": "dummy0", "sandbox":"netns"}
-		],
-		"ips": [
-			{
-				"version": "4",
-				"address": "10.0.0.2/24",
-				"gateway": "10.0.0.1",
-				"interface": 0
-			}
-		],
-                "routes": [
-                  {
-                    "dst": "0.0.0.0/0",
-                    "gw": "10.0.0.1"
-                  },
-                  {
-                    "dst": "30.0.0.0/24"
-                  },
-                  {
-                    "dst": "20.0.0.0/24",
-                    "gw": "10.0.0.254"
-                  }
-		]
-	}
-}`)
+	   	"name": "test",
+	   	"type": "route-overwrite",
+	   	"cniVersion": "0.3.1",
+	           "delroutes": [ { "dst": "0.0.0.0/0" },
+	                          { "dst": "20.0.0.0/24" } ],
+	           "addroutes": [ { "dst": "0.0.0.0/0", "gw": "10.0.0.254" },
+	                          { "dst": "20.0.0.0/24" } ],
+	   	"prevResult": {
+	   		"interfaces": [
+	   			{"name": "dummy0", "sandbox":"netns"}
+	   		],
+	   		"ips": [
+	   			{
+	   				"version": "4",
+	   				"address": "10.0.0.2/24",
+	   				"gateway": "10.0.0.1",
+	   				"interface": 0
+	   			}
+	   		],
+	                   "routes": [
+	                     {
+	                       "dst": "0.0.0.0/0",
+	                       "gw": "10.0.0.1"
+	                     },
+	                     {
+	                       "dst": "30.0.0.0/24"
+	                     },
+	                     {
+	                       "dst": "20.0.0.0/24",
+	                       "gw": "10.0.0.254"
+	                     }
+	   		]
+	   	}
+	   }`)
 
 		args := &skel.CmdArgs{
 			ContainerID: "dummy",
-			Netns:       "",
+			Netns:       targetNS.Path(),
 			IfName:      IFNAME,
 			StdinData:   conf,
 		}
 
-		defer GinkgoRecover()
+		// set address/route as fakeCNI plugin
+		err := targetNS.Do(func(ns.NetNS) error {
+			defer GinkgoRecover()
+			link, err := netlink.LinkByName(IFNAME)
+			Expect(err).NotTo(HaveOccurred())
+			err = netlink.LinkSetUp(link)
+			Expect(err).NotTo(HaveOccurred())
 
-		r, _, err := testutils.CmdAddWithArgs(args, func() error {
-			return cmdAdd(args)
+			// addr 10.0.0.2/24
+			err = testAddAddr(link, net.IPv4(10, 0, 0, 2), net.CIDRMask(24, 32))
+			Expect(err).NotTo(HaveOccurred())
+
+			// add default gateway into IFNAME
+			err = testAddRoute(link,
+				net.IPv4(0, 0, 0, 0), net.CIDRMask(0, 0),
+				net.IPv4(10, 0, 0, 1))
+			Expect(err).NotTo(HaveOccurred())
+
+			//"dst": "30.0.0.0/24"
+			err = testAddRoute(link,
+				net.IPv4(30, 0, 0, 0), net.CIDRMask(24, 32),
+				net.IPv4(10, 0, 0, 1))
+			Expect(err).NotTo(HaveOccurred())
+
+			// "dst": "20.0.0.0/24", "gw": "10.0.0.254"
+			err = testAddRoute(link,
+				net.IPv4(20, 0, 0, 0), net.CIDRMask(24, 32),
+				net.IPv4(10, 0, 0, 254))
+			Expect(err).NotTo(HaveOccurred())
+
+			return nil
 		})
 		Expect(err).NotTo(HaveOccurred())
+		err = originalNS.Do(func(ns.NetNS) error {
+			defer GinkgoRecover()
+			var result *current.Result
 
-		result, err := current.GetResult(r)
-		Expect(err).NotTo(HaveOccurred())
+			r, _, err := testutils.CmdAddWithArgs(args, func() error {
+				return cmdAdd(args)
+			})
+			Expect(err).NotTo(HaveOccurred())
 
-		Expect(len(result.Interfaces)).To(Equal(1))
-		Expect(result.Interfaces[0].Name).To(Equal(IFNAME))
-		Expect(len(result.IPs)).To(Equal(1))
-		Expect(result.IPs[0].Address.String()).To(Equal("10.0.0.2/24"))
-		Expect(result.Routes[0].Dst.String()).To(Equal("30.0.0.0/24"))
-		Expect(result.Routes[0].GW).To(BeNil())
-		Expect(result.Routes[1].Dst.String()).To(Equal("0.0.0.0/0"))
-		Expect(result.Routes[1].GW.String()).To(Equal("10.0.0.254"))
-		Expect(result.Routes[2].Dst.String()).To(Equal("20.0.0.0/24"))
-		Expect(result.Routes[2].GW).To(BeNil())
+			result, err = current.GetResult(r)
+			Expect(err).NotTo(HaveOccurred())
 
-		Expect(err).NotTo(HaveOccurred())
+			Expect(len(result.Interfaces)).To(Equal(1))
+			Expect(result.Interfaces[0].Name).To(Equal(IFNAME))
+			Expect(len(result.IPs)).To(Equal(1))
+			Expect(result.IPs[0].Address.String()).To(Equal("10.0.0.2/24"))
+			Expect(result.Routes[0].Dst.String()).To(Equal("30.0.0.0/24"))
+			Expect(result.Routes[0].GW).To(BeNil())
+			Expect(result.Routes[1].Dst.String()).To(Equal("0.0.0.0/0"))
+			Expect(result.Routes[1].GW.String()).To(Equal("10.0.0.254"))
+			Expect(result.Routes[2].Dst.String()).To(Equal("20.0.0.0/24"))
+			Expect(result.Routes[2].GW).To(BeNil())
+
+			return nil
+		})
+		// XXX: need to check routing table
 	})
 
 })
 
 var _ = Describe("route-overwrite operations by args", func() {
 	const IFNAME string = "dummy0"
+
+	var originalNS ns.NetNS
+	var targetNS ns.NetNS
+
+	BeforeEach(func() {
+		// Create a new NetNS so we don't modify the host
+		var err error
+		originalNS, err = testutils.NewNS()
+		Expect(err).NotTo(HaveOccurred())
+
+		targetNS, err = testutils.NewNS()
+		Expect(err).NotTo(HaveOccurred())
+
+		err = targetNS.Do(func(ns.NetNS) error {
+			defer GinkgoRecover()
+
+			err = netlink.LinkAdd(&netlink.Dummy{
+				LinkAttrs: netlink.LinkAttrs{
+					Name: IFNAME,
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			_, err = netlink.LinkByName(IFNAME)
+			Expect(err).NotTo(HaveOccurred())
+			return nil
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+	})
+
+	AfterEach(func() {
+		Expect(originalNS.Close()).To(Succeed())
+	})
 
 	It("check flushroutes clears all routes", func() {
 		conf := []byte(`{
@@ -336,166 +590,280 @@ var _ = Describe("route-overwrite operations by args", func() {
 
 		args := &skel.CmdArgs{
 			ContainerID: "dummy",
-			Netns:       "",
+			Netns:       targetNS.Path(),
 			IfName:      IFNAME,
 			StdinData:   conf,
 		}
 
-		defer GinkgoRecover()
+		// set address/route as fakeCNI plugin
+		err := targetNS.Do(func(ns.NetNS) error {
+			defer GinkgoRecover()
+			link, err := netlink.LinkByName(IFNAME)
+			Expect(err).NotTo(HaveOccurred())
+			err = netlink.LinkSetUp(link)
+			Expect(err).NotTo(HaveOccurred())
 
-		r, _, err := testutils.CmdAddWithArgs(args, func() error {
-			return cmdAdd(args)
+			// addr 10.0.0.2/24
+			err = testAddAddr(link, net.IPv4(10, 0, 0, 2), net.CIDRMask(24, 32))
+			Expect(err).NotTo(HaveOccurred())
+
+			// add default gateway into IFNAME
+			err = testAddRoute(link,
+				net.IPv4(0, 0, 0, 0), net.CIDRMask(0, 0),
+				net.IPv4(10, 0, 0, 1))
+			Expect(err).NotTo(HaveOccurred())
+
+			//"dst": "30.0.0.0/24"
+			err = testAddRoute(link,
+				net.IPv4(30, 0, 0, 0), net.CIDRMask(24, 32),
+				net.IPv4(10, 0, 0, 1))
+			Expect(err).NotTo(HaveOccurred())
+
+			// "dst": "20.0.0.0/24", "gw": "10.0.0.254"
+			err = testAddRoute(link,
+				net.IPv4(20, 0, 0, 0), net.CIDRMask(24, 32),
+				net.IPv4(10, 0, 0, 254))
+			Expect(err).NotTo(HaveOccurred())
+
+			return nil
 		})
 		Expect(err).NotTo(HaveOccurred())
 
-		result, err := current.GetResult(r)
-		Expect(err).NotTo(HaveOccurred())
+		err = originalNS.Do(func(ns.NetNS) error {
+			defer GinkgoRecover()
+			var result *current.Result
 
-		Expect(len(result.Interfaces)).To(Equal(1))
-		Expect(result.Interfaces[0].Name).To(Equal(IFNAME))
-		Expect(len(result.IPs)).To(Equal(1))
-		Expect(result.IPs[0].Address.String()).To(Equal("10.0.0.2/24"))
-		Expect(result.Routes).To(BeNil())
+			r, _, err := testutils.CmdAddWithArgs(args, func() error {
+				return cmdAdd(args)
+			})
+			Expect(err).NotTo(HaveOccurred())
 
-		Expect(err).NotTo(HaveOccurred())
+			result, err = current.GetResult(r)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(len(result.Interfaces)).To(Equal(1))
+			Expect(result.Interfaces[0].Name).To(Equal(IFNAME))
+			Expect(len(result.IPs)).To(Equal(1))
+			Expect(result.IPs[0].Address.String()).To(Equal("10.0.0.2/24"))
+			Expect(result.Routes).To(BeNil())
+			return nil
+		})
+
+		// XXX: need to check routing table
 	})
 
 	It("check delroutes works", func() {
 		conf := []byte(`{
-	"name": "test",
-	"type": "route-overwrite",
-	"cniVersion": "0.3.1",
-        "args": {
-          "cni": {
-            "delroutes": [ { "dst": "0.0.0.0/0" }, 
-                           { "dst": "20.0.0.0/24" } ]
-          }
-        },
-	"prevResult": {
-		"interfaces": [
-			{"name": "dummy0", "sandbox":"netns"}
-		],
-		"ips": [
-			{
-				"version": "4",
-				"address": "10.0.0.2/24",
-				"gateway": "10.0.0.1",
-				"interface": 0
-			}
-		],
-                "routes": [
-                  {
-                    "dst": "0.0.0.0/0",
-                    "gw": "10.0.0.1"
-                  },
-                  {
-                    "dst": "30.0.0.0/24"
-                  },
-                  {
-                    "dst": "20.0.0.0/24",
-                    "gw": "10.0.0.254"
-                  }
-		]
-	}
-}`)
+	   	"name": "test",
+	   	"type": "route-overwrite",
+	   	"cniVersion": "0.3.1",
+	           "args": {
+	             "cni": {
+	               "delroutes": [ { "dst": "0.0.0.0/0" },
+	                              { "dst": "20.0.0.0/24" } ]
+	             }
+	           },
+	   	"prevResult": {
+	   		"interfaces": [
+	   			{"name": "dummy0", "sandbox":"netns"}
+	   		],
+	   		"ips": [
+	   			{
+	   				"version": "4",
+	   				"address": "10.0.0.2/24",
+	   				"gateway": "10.0.0.1",
+	   				"interface": 0
+	   			}
+	   		],
+	                   "routes": [
+	                     {
+	                       "dst": "0.0.0.0/0",
+	                       "gw": "10.0.0.1"
+	                     },
+	                     {
+	                       "dst": "30.0.0.0/24"
+	                     },
+	                     {
+	                       "dst": "20.0.0.0/24",
+	                       "gw": "10.0.0.254"
+	                     }
+	   		]
+	   	}
+	   }`)
 
 		args := &skel.CmdArgs{
 			ContainerID: "dummy",
-			Netns:       "",
+			Netns:       targetNS.Path(),
 			IfName:      IFNAME,
 			StdinData:   conf,
 		}
 
-		defer GinkgoRecover()
+		// set address/route as fakeCNI plugin
+		err := targetNS.Do(func(ns.NetNS) error {
+			defer GinkgoRecover()
+			link, err := netlink.LinkByName(IFNAME)
+			Expect(err).NotTo(HaveOccurred())
+			err = netlink.LinkSetUp(link)
+			Expect(err).NotTo(HaveOccurred())
 
-		r, _, err := testutils.CmdAddWithArgs(args, func() error {
-			return cmdAdd(args)
+			// addr 10.0.0.2/24
+			err = testAddAddr(link, net.IPv4(10, 0, 0, 2), net.CIDRMask(24, 32))
+			Expect(err).NotTo(HaveOccurred())
+
+			// add default gateway into IFNAME
+			err = testAddRoute(link,
+				net.IPv4(0, 0, 0, 0), net.CIDRMask(0, 0),
+				net.IPv4(10, 0, 0, 1))
+			Expect(err).NotTo(HaveOccurred())
+
+			//"dst": "30.0.0.0/24"
+			err = testAddRoute(link,
+				net.IPv4(30, 0, 0, 0), net.CIDRMask(24, 32),
+				net.IPv4(10, 0, 0, 1))
+			Expect(err).NotTo(HaveOccurred())
+
+			// "dst": "20.0.0.0/24", "gw": "10.0.0.254"
+			err = testAddRoute(link,
+				net.IPv4(20, 0, 0, 0), net.CIDRMask(24, 32),
+				net.IPv4(10, 0, 0, 254))
+			Expect(err).NotTo(HaveOccurred())
+
+			return nil
 		})
 		Expect(err).NotTo(HaveOccurred())
 
-		result, err := current.GetResult(r)
-		Expect(err).NotTo(HaveOccurred())
+		err = originalNS.Do(func(ns.NetNS) error {
+			defer GinkgoRecover()
+			var result *current.Result
 
-		Expect(len(result.Interfaces)).To(Equal(1))
-		Expect(result.Interfaces[0].Name).To(Equal(IFNAME))
-		Expect(len(result.IPs)).To(Equal(1))
-		Expect(result.IPs[0].Address.String()).To(Equal("10.0.0.2/24"))
-		Expect(result.Routes[0].Dst.String()).To(Equal("30.0.0.0/24"))
-		Expect(result.Routes[0].GW).To(BeNil())
+			r, _, err := testutils.CmdAddWithArgs(args, func() error {
+				return cmdAdd(args)
+			})
+			Expect(err).NotTo(HaveOccurred())
 
-		Expect(err).NotTo(HaveOccurred())
+			result, err = current.GetResult(r)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(len(result.Interfaces)).To(Equal(1))
+			Expect(result.Interfaces[0].Name).To(Equal(IFNAME))
+			Expect(len(result.IPs)).To(Equal(1))
+			Expect(result.IPs[0].Address.String()).To(Equal("10.0.0.2/24"))
+			Expect(result.Routes[0].Dst.String()).To(Equal("30.0.0.0/24"))
+			Expect(result.Routes[0].GW).To(BeNil())
+
+			return nil
+		})
+		// XXX: need to check routing table
 	})
 
 	It("check addroutes works", func() {
 		conf := []byte(`{
-	"name": "test",
-	"type": "route-overwrite",
-	"cniVersion": "0.3.1",
-        "args": {
-          "cni": {
-          "delroutes": [ { "dst": "0.0.0.0/0" }, 
-                         { "dst": "20.0.0.0/24" } ],
-          "addroutes": [ { "dst": "0.0.0.0/0", "gw": "10.0.0.254" }, 
-                         { "dst": "20.0.0.0/24" } ]
-          }
-        },
-	"prevResult": {
-		"interfaces": [
-			{"name": "dummy0", "sandbox":"netns"}
-		],
-		"ips": [
-			{
-				"version": "4",
-				"address": "10.0.0.2/24",
-				"gateway": "10.0.0.1",
-				"interface": 0
-			}
-		],
-                "routes": [
-                  {
-                    "dst": "0.0.0.0/0",
-                    "gw": "10.0.0.1"
-                  },
-                  {
-                    "dst": "30.0.0.0/24"
-                  },
-                  {
-                    "dst": "20.0.0.0/24",
-                    "gw": "10.0.0.254"
-                  }
-		]
-	}
-}`)
+	   	"name": "test",
+	   	"type": "route-overwrite",
+	   	"cniVersion": "0.3.1",
+	           "args": {
+	             "cni": {
+	             "delroutes": [ { "dst": "0.0.0.0/0" },
+	                            { "dst": "20.0.0.0/24" } ],
+	             "addroutes": [ { "dst": "0.0.0.0/0", "gw": "10.0.0.254" },
+	                            { "dst": "20.0.0.0/24" } ]
+	             }
+	           },
+	   	"prevResult": {
+	   		"interfaces": [
+	   			{"name": "dummy0", "sandbox":"netns"}
+	   		],
+	   		"ips": [
+	   			{
+	   				"version": "4",
+	   				"address": "10.0.0.2/24",
+	   				"gateway": "10.0.0.1",
+	   				"interface": 0
+	   			}
+	   		],
+	                   "routes": [
+	                     {
+	                       "dst": "0.0.0.0/0",
+	                       "gw": "10.0.0.1"
+	                     },
+	                     {
+	                       "dst": "30.0.0.0/24"
+	                     },
+	                     {
+	                       "dst": "20.0.0.0/24",
+	                       "gw": "10.0.0.254"
+	                     }
+	   		]
+	   	}
+	   }`)
 
 		args := &skel.CmdArgs{
 			ContainerID: "dummy",
-			Netns:       "",
+			Netns:       targetNS.Path(),
 			IfName:      IFNAME,
 			StdinData:   conf,
 		}
 
-		defer GinkgoRecover()
+		// set address/route as fakeCNI plugin
+		err := targetNS.Do(func(ns.NetNS) error {
+			defer GinkgoRecover()
+			link, err := netlink.LinkByName(IFNAME)
+			Expect(err).NotTo(HaveOccurred())
+			err = netlink.LinkSetUp(link)
+			Expect(err).NotTo(HaveOccurred())
 
-		r, _, err := testutils.CmdAddWithArgs(args, func() error {
-			return cmdAdd(args)
+			// addr 10.0.0.2/24
+			err = testAddAddr(link, net.IPv4(10, 0, 0, 2), net.CIDRMask(24, 32))
+			Expect(err).NotTo(HaveOccurred())
+
+			// add default gateway into IFNAME
+			err = testAddRoute(link,
+				net.IPv4(0, 0, 0, 0), net.CIDRMask(0, 0),
+				net.IPv4(10, 0, 0, 1))
+			Expect(err).NotTo(HaveOccurred())
+
+			//"dst": "30.0.0.0/24"
+			err = testAddRoute(link,
+				net.IPv4(30, 0, 0, 0), net.CIDRMask(24, 32),
+				net.IPv4(10, 0, 0, 1))
+			Expect(err).NotTo(HaveOccurred())
+
+			// "dst": "20.0.0.0/24", "gw": "10.0.0.254"
+			err = testAddRoute(link,
+				net.IPv4(20, 0, 0, 0), net.CIDRMask(24, 32),
+				net.IPv4(10, 0, 0, 254))
+			Expect(err).NotTo(HaveOccurred())
+
+			return nil
 		})
 		Expect(err).NotTo(HaveOccurred())
 
-		result, err := current.GetResult(r)
-		Expect(err).NotTo(HaveOccurred())
+		err = originalNS.Do(func(ns.NetNS) error {
+			defer GinkgoRecover()
+			var result *current.Result
 
-		Expect(len(result.Interfaces)).To(Equal(1))
-		Expect(result.Interfaces[0].Name).To(Equal(IFNAME))
-		Expect(len(result.IPs)).To(Equal(1))
-		Expect(result.IPs[0].Address.String()).To(Equal("10.0.0.2/24"))
-		Expect(result.Routes[0].Dst.String()).To(Equal("30.0.0.0/24"))
-		Expect(result.Routes[0].GW).To(BeNil())
-		Expect(result.Routes[1].Dst.String()).To(Equal("0.0.0.0/0"))
-		Expect(result.Routes[1].GW.String()).To(Equal("10.0.0.254"))
-		Expect(result.Routes[2].Dst.String()).To(Equal("20.0.0.0/24"))
-		Expect(result.Routes[2].GW).To(BeNil())
+			r, _, err := testutils.CmdAddWithArgs(args, func() error {
+				return cmdAdd(args)
+			})
+			Expect(err).NotTo(HaveOccurred())
 
-		Expect(err).NotTo(HaveOccurred())
+			result, err = current.GetResult(r)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(len(result.Interfaces)).To(Equal(1))
+			Expect(result.Interfaces[0].Name).To(Equal(IFNAME))
+			Expect(len(result.IPs)).To(Equal(1))
+			Expect(result.IPs[0].Address.String()).To(Equal("10.0.0.2/24"))
+			Expect(result.Routes[0].Dst.String()).To(Equal("30.0.0.0/24"))
+			Expect(result.Routes[0].GW).To(BeNil())
+			Expect(result.Routes[1].Dst.String()).To(Equal("0.0.0.0/0"))
+			Expect(result.Routes[1].GW.String()).To(Equal("10.0.0.254"))
+			Expect(result.Routes[2].Dst.String()).To(Equal("20.0.0.0/24"))
+			Expect(result.Routes[2].GW).To(BeNil())
+
+			return nil
+		})
+		// XXX: need to check routing table
 	})
 
 })
