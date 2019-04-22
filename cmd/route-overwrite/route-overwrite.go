@@ -134,6 +134,23 @@ func deleteAllRoutes(res *current.Result) error {
 	return err
 }
 
+func deleteGWRoute(res *current.Result) error {
+	var err error
+	for _, netif := range res.Interfaces {
+		if netif.Sandbox != "" {
+			link, _ := netlink.LinkByName(netif.Name)
+			routes, _ := netlink.RouteList(link, netlink.FAMILY_ALL)
+			for _, nlroute := range routes {
+				if nlroute.Dst == nil {
+					err = netlink.RouteDel(&nlroute)
+				}
+			}
+		}
+	}
+
+	return err
+}
+
 func deleteRoute(route *types.Route, res *current.Result) error {
 	var err error
 	for _, netif := range res.Interfaces {
@@ -221,6 +238,11 @@ func processRoutes(netnsname string, conf *RouteOverwriteConfig) (*current.Resul
 			newRoutes = append(newRoutes, route)
 			addRoute(dev, route)
 		}
+
+		if conf.FlushGateway {
+			deleteGWRoute(res)
+		}
+
 		return nil
 	})
 	res.Routes = newRoutes
