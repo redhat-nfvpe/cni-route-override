@@ -39,3 +39,10 @@ if [ -n "${vetRes}" ]; then
 	echo -e "govet checking failed:\n${vetRes}"
 	exit 255
 fi
+
+echo "Checking golint..."
+lintRes=$(golint $LINT_TARGETS)
+if [ -n "${lintRes}" ]; then
+	echo -e "golint checking failed:\n${lintRes}"
+	exit 255
+fi
