@@ -1,55 +1,32 @@
 language: go
-sudo: required
+# see https://docs.travis-ci.com/user/reference/overview/#Virtualization-environments
+# for the detail
+sudo: requried
 dist: trusty
 
-go:
-  - 1.10.x
-  - 1.11.x
-
-env:
-  global:
-  - PATH=$GOROOT/bin:$GOPATH/bin:$PATH
-  matrix:
-  - TARGET=386
-  - TARGET=amd64
-#  - TARGET=arm
-#  - TARGET=arm64
-#  - TARGET=ppc64le
-#  - TARGET=s390x
-
-matrix:
-  fast_finish: true
-#  include:
-#    - os: windows
-#      env: TARGET=amd64
-#      go: 1.10.x
-#    - os: windows
-#      env: TARGET=amd64
-#      go: 1.11.x
+before_install:
+  - sudo apt-get update -qq
+  - go get github.com/golang/dep/...
 
 install:
-  - go get github.com/onsi/ginkgo/ginkgo
+  - $GOPATH/bin/dep ensure
+  - go get -u golang.org/x/lint/golint
+
+before_script:
+  - golint ./cmd/route-overwrite/... | xargs -r false
 
 script:
- - |
-   if [ "${TARGET}" == "amd64" ]; then
-     GOARCH="${TARGET}" ./test_${TRAVIS_OS_NAME}.sh
-   else
-     GOARCH="${TARGET}" ./build_linux.sh
-   fi
+  - ./build_linux.sh
+  - ./test_linux.sh
 
 deploy:
-  # Release on versioned tag (e.g. v1.0)
-  - provider: script
-    #skip_cleanup: true
-    script: curl -sL https://git.io/goreleaser | bash
-    on:
-      tags: true
-      all_branches: true
-      condition: "$TRAVIS_TAG =~ ^v[0-9].*$"
-
-notifications:
-  email: false
-
-git:
-  depth: 9999999
+  provider: script
+  api_key:
+    secure: "$GITHUB_TOKEN"
+  skip_cleanup: true
+  script: curl -sL http://git.io/goreleaser | bash
+  on:
+    tags: true
+    all_branches: true
+    condition: "$TRAVIS_TAG =~ ^v[0-9].*$"
+  skip_cleanup: true
