@@ -38,7 +38,7 @@ import (
 // + only checko route/dst
 //go build ./cmd/route-overwrite/
 
-// RouteOverwrite represents the network route-overwrite configuration
+// RouteOverwriteConfig represents the network route-overwrite configuration
 type RouteOverwriteConfig struct {
 	types.NetConf
 
@@ -55,6 +55,7 @@ type RouteOverwriteConfig struct {
 	} `json:"args"`
 }
 
+// IPAMArgs represents CNI argument conventions for the plugin
 type IPAMArgs struct {
 	FlushRoutes  *bool          `json:"flushroutes,omitempty"`
 	FlushGateway *bool          `json:"flushgateway,omitempty"`
