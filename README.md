@@ -8,24 +8,31 @@ It is useful in a case with [network-attachment-definition](https://github.com/K
 
 ```
 {
-  "cniVersion": "0.3.0",
-  "name" : "mymacvlan",
-  "plugins": [ {
-    "type": "macvlan",
-    "master": "eth1",
-    "mode": "bridge",
-    "ipam": {
-       ....
+    "cniVersion": "0.3.0",
+    "name" : "mymacvlan",
+    "plugins": [
+    {
+        "type": "macvlan",
+        "master": "eth1",
+        "mode": "bridge",
+        "ipam": {
+            ...
+        }
+    },
+    {
+        "type" : "routing-overwrite",
+        "flushroutes" : "true",
+        "delroutes": [
+        {
+            "dst": "192.168.0.0/24"
+        }],
+        "addroutes": [
+        {
+            "dst": "192.168.0.0/24",
+            "gw": "10.1.254.254"
+        }]
     }
-  }, {
-    "type" : "routing-overwrite",
-    "flushroutes" : "true",
-	"delroutes": [
-	      { "dst": "192.168.0.0/24" }
-    ],
-    "addroutes": [
-      { "dst": "192.168.0.0/24", "gw": "10.1.254.254" }
-  } ]
+    ]
 }
 ```
 
