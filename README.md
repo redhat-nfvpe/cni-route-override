@@ -33,6 +33,7 @@ It is useful in a case with [network-attachment-definition](https://github.com/K
 
 * `type`: (string, required): "routing-overwrite"
 * `flushroutes`: (bool, optional): true if you flush all routes.
+* `flushgateway`: (bool, optional): true if you flush default route (gateway).
 * `delroutes`: (object, optional): list of routes add to the container namespace. Each route is a dictionary with "dst" and optional "gw" fields. If "gw" is omitted, value of "gateway" will be used.
 * `addroutes`: (object, optional): list of routes add to the container namespace. Each route is a dictionary with "dst" and optional "gw" fields. If "gw" is omitted, value of "gateway" will be used.
 
@@ -49,6 +50,7 @@ It is useful in a case with [network-attachment-definition](https://github.com/K
 The following [args conventions](https://github.com/containernetworking/cni/blob/master/CONVENTIONS.md#args-in-network-config) are supported:
 
 * `flushroutes`: (bool, optional): true if you flush all routes.
+* `flushgateway`: (bool, optional): true if you flush default route (gateway).
 * `delroutes`: (object, optional): list of routes add to the container namespace. Each route is a dictionary with "dst" and optional "gw" fields. If "gw" is omitted, value of "gateway" will be used.
 * `addroutes`: (object, optional): list of routes add to the container namespace. Each route is a dictionary with "dst" and optional "gw" fields. If "gw" is omitted, value of "gateway" will be used.
 
