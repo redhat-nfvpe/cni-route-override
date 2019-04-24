@@ -20,7 +20,7 @@ It is useful in a case with [network-attachment-definition](https://github.com/K
         }
     },
     {
-        "type" : "routing-overwrite",
+        "type" : "route-overwrite",
         "flushroutes" : "true",
         "delroutes": [
         {
