@@ -4,6 +4,9 @@
  route-overwrite IPAM works as meta CNI plugin to overwrite IP route given by previous CNI plugins.
 It is useful in a case with [network-attachment-definition](https://github.com/K8sNetworkPlumbingWG/multi-net-spec).
 
+## Supported runtime
+ Currently route-overwrite verified its feature with `podman` and `crio`(with Kubernetes).
+
 ## Example Configuration
 
 ```
@@ -51,6 +54,7 @@ It is useful in a case with [network-attachment-definition](https://github.com/K
 1. flush routes if `flushroutes` is enabled.
 1. delete routes in `delroutes` if `delroutes` has route and the route is exists in routes.
 1. add routes in `addroutes` if `addroutes` has route.
+1. flush gateway if `flushgateway` is enabled.
 
 ## Supported Arguments
 
@@ -60,5 +64,4 @@ The following [args conventions](https://github.com/containernetworking/cni/blob
 * `flushgateway`: (bool, optional): true if you flush default route (gateway).
 * `delroutes`: (object, optional): list of routes add to the container namespace. Each route is a dictionary with "dst" and optional "gw" fields. If "gw" is omitted, value of "gateway" will be used.
 * `addroutes`: (object, optional): list of routes add to the container namespace. Each route is a dictionary with "dst" and optional "gw" fields. If "gw" is omitted, value of "gateway" will be used.
-
 
