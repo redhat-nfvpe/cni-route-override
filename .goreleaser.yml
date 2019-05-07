@@ -4,7 +4,7 @@ builds:
 -  
   env:
   - CGO_ENABLED=0
-  main: ./cmd/route-overwrite/
+  main: ./cmd/route-override/
   goos:
   - linux
   goarch:

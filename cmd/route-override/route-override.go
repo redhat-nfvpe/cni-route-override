@@ -36,10 +36,10 @@ import (
 
 // Todo:
 // + only checko route/dst
-//go build ./cmd/route-overwrite/
+//go build ./cmd/route-override/
 
-// RouteOverwriteConfig represents the network route-overwrite configuration
-type RouteOverwriteConfig struct {
+// RouteOverrideConfig represents the network route-override configuration
+type RouteOverrideConfig struct {
 	types.NetConf
 
 	//RawPrevResult map[string]interface{} `json:"prevResult,omitempty"`
@@ -64,18 +64,18 @@ type IPAMArgs struct {
 }
 
 /*
-type RouteOverwriteArgs struct {
+type RouteOverrideArgs struct {
 	types.CommonArgs
 }
 */
-func parseConf(data []byte, envArgs string) (*RouteOverwriteConfig, error) {
-	conf := RouteOverwriteConfig{FlushRoutes: false}
+func parseConf(data []byte, envArgs string) (*RouteOverrideConfig, error) {
+	conf := RouteOverrideConfig{FlushRoutes: false}
 
 	if err := json.Unmarshal(data, &conf); err != nil {
 		return nil, fmt.Errorf("failed to load netconf: %v", err)
 	}
 
-	// overwrite values by args
+	// override values by args
 	if conf.Args != nil {
 		if conf.Args.A.FlushRoutes != nil {
 			conf.FlushRoutes = *conf.Args.A.FlushRoutes
@@ -180,7 +180,7 @@ func addRoute(dev netlink.Link, route *types.Route) error {
 	})
 }
 
-func processRoutes(netnsname string, conf *RouteOverwriteConfig) (*current.Result, error) {
+func processRoutes(netnsname string, conf *RouteOverrideConfig) (*current.Result, error) {
 	netns, err := ns.GetNS(netnsname)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open netns %q: %v", netns, err)
@@ -252,17 +252,17 @@ func processRoutes(netnsname string, conf *RouteOverwriteConfig) (*current.Resul
 }
 
 func cmdAdd(args *skel.CmdArgs) error {
-	overwriteConf, err := parseConf(args.StdinData, args.Args)
+	overrideConf, err := parseConf(args.StdinData, args.Args)
 	if err != nil {
 		return err
 	}
 
-	newResult, err := processRoutes(args.Netns, overwriteConf)
+	newResult, err := processRoutes(args.Netns, overrideConf)
 	if err != nil {
-		return fmt.Errorf("failed to overwrite routes: %v", err)
+		return fmt.Errorf("failed to override routes: %v", err)
 	}
 
-	return types.PrintResult(newResult, overwriteConf.CNIVersion)
+	return types.PrintResult(newResult, overrideConf.CNIVersion)
 }
 
 func cmdDel(args *skel.CmdArgs) error {

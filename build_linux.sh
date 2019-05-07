@@ -7,7 +7,7 @@ if [ "$(uname)" == "Darwin" ]; then
 fi
 
 ORG_PATH="github.com/redhat-nfvpe"
-export REPO_PATH="${ORG_PATH}/cni-route-overwrite"
+export REPO_PATH="${ORG_PATH}/cni-route-override"
 
 if [ ! -h gopath/src/${REPO_PATH} ]; then
 	mkdir -p gopath/src/${ORG_PATH}
@@ -20,7 +20,7 @@ export GO="${GO:-go}"
 mkdir -p "${PWD}/bin"
 
 echo "Building plugins ${GOOS}"
-PLUGINS="cmd/route-overwrite"
+PLUGINS="cmd/route-override"
 for d in $PLUGINS; do
 	if [ -d "$d" ]; then
 		plugin="$(basename "$d")"

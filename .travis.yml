@@ -37,7 +37,7 @@ install:
   - go get github.com/onsi/ginkgo/ginkgo
 
 #before_script:
-#  - golint ./cmd/route-overwrite/... | xargs -r false #done at ./test_linux.sh
+#  - golint ./cmd/route-override/... | xargs -r false #done at ./test_linux.sh
 
 script:
  - |

@@ -33,9 +33,9 @@ import (
 
 // ginkgo -p --randomizeAllSpecs --randomizeSuites --failOnPending --progress -r ./cmd/...
 
-func TestRouteOverwrite(t *testing.T) {
+func TestRouteOverride(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "RouteOverwrite")
+	RunSpecs(t, "RouteOverride")
 }
 
 // helper function
@@ -73,7 +73,7 @@ func testHasRoute(routes []netlink.Route, dst *net.IPNet) bool {
 	return false
 }
 
-var _ = Describe("route-overwrite operations by conf", func() {
+var _ = Describe("route-override operations by conf", func() {
 	const IFNAME string = "dummy0"
 	var originalNS ns.NetNS
 	var targetNS ns.NetNS
@@ -111,7 +111,7 @@ var _ = Describe("route-overwrite operations by conf", func() {
 	It("passes prevResult through unchanged", func() {
 		conf := []byte(`{
 			"name": "test",
-			"type": "route-overwrite",
+			"type": "route-override",
 			"cniVersion": "0.3.1",
 			"prevResult": {
 				"interfaces": [
@@ -221,7 +221,7 @@ var _ = Describe("route-overwrite operations by conf", func() {
 	It("check flushroutes clears all routes", func() {
 		conf := []byte(`{
 			"name": "test",
-			"type": "route-overwrite",
+			"type": "route-override",
 			"cniVersion": "0.3.1",
 			"flushroutes": true,
 			"prevResult": {
@@ -335,7 +335,7 @@ var _ = Describe("route-overwrite operations by conf", func() {
 	It("check flushgateway clears gw routes", func() {
 		conf := []byte(`{
 			"name": "test",
-			"type": "route-overwrite",
+			"type": "route-override",
 			"cniVersion": "0.3.1",
 			"flushgateway": true,
 			"prevResult": {
@@ -448,7 +448,7 @@ var _ = Describe("route-overwrite operations by conf", func() {
 	It("check delroutes works", func() {
 		conf := []byte(`{
 			"name": "test",
-			"type": "route-overwrite",
+			"type": "route-override",
 			"cniVersion": "0.3.1",
 			"delroutes": [ { "dst": "20.0.0.0/24" } ],
 			"prevResult": {
@@ -564,7 +564,7 @@ var _ = Describe("route-overwrite operations by conf", func() {
 	It("check addroutes works", func() {
 		conf := []byte(`{
 			"name": "test",
-			"type": "route-overwrite",
+			"type": "route-override",
 			"cniVersion": "0.3.1",
 			"addroutes": [
 			{
@@ -678,7 +678,7 @@ var _ = Describe("route-overwrite operations by conf", func() {
 
 })
 
-var _ = Describe("route-overwrite operations by args", func() {
+var _ = Describe("route-override operations by args", func() {
 	const IFNAME string = "dummy0"
 
 	var originalNS ns.NetNS
@@ -717,7 +717,7 @@ var _ = Describe("route-overwrite operations by args", func() {
 	It("check flushroutes clears all routes", func() {
 		conf := []byte(`{
 			"name": "test",
-			"type": "route-overwrite",
+			"type": "route-override",
 			"cniVersion": "0.3.1",
 			"args": {
 				"cni": {
@@ -834,7 +834,7 @@ var _ = Describe("route-overwrite operations by args", func() {
 	It("check delroutes works", func() {
 		conf := []byte(`{
 			"name": "test",
-			"type": "route-overwrite",
+			"type": "route-override",
 			"cniVersion": "0.3.1",
 			"args": {
 				"cni": {
@@ -957,7 +957,7 @@ var _ = Describe("route-overwrite operations by args", func() {
 	It("check addroutes works", func() {
 		conf := []byte(`{
 			"name": "test",
-			"type": "route-overwrite",
+			"type": "route-override",
 			"cniVersion": "0.3.1",
 			"args": {
 				"cni": {
