@@ -1,4 +1,5 @@
 # route-override: Meta CNI plugin for overriding IP route
+![Travis CI](https://travis-ci.org/redhat-nfvpe/cni-route-override.svg?branch=master)
 
 ## Overview
  route-override IPAM works as meta CNI plugin to override IP route given by previous CNI plugins.
