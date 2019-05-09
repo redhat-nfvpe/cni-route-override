@@ -8,6 +8,10 @@ It is useful in a case with [network-attachment-definition](https://github.com/K
 ## Supported runtime
  Currently route-override verified its feature with `podman` and `crio`(with Kubernetes).
 
+## Download
+Binaries (for 386/amd64) are in [Releases](https://github.com/redhat-nfvpe/cni-route-override/releases).
+
+
 ## Example Configuration
 
 ```
