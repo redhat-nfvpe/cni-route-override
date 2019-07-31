@@ -9,6 +9,7 @@ go:
 env:
   global:
   - PATH=$GOROOT/bin:$GOPATH/bin:$PATH
+  - secure: "h10fqhla7Q34jP+DImaZJ3YKHKd2L/Xc6Rm67pTwlo5FA2Lbr8/buvtEe6iTkfGyr9gP9ECJZ4zl1oq1r+fnUHXQX9XrCUgEC7yf+ve5YbvYjD37kxh5T11DzB+mHzrjoN1wlamL1HjKiKlXrelaijrZs2vOwqzDCf+UTzxUlAli8vKHYfqJcPTqqIOVlpRdawqr33uHzQuHu9AsRwZYUaaduKmPr4WJqlx/F5FgPgXe2/lPYQVqiRUgCC9TgFUzPYbewbddJsT0z+KogjTF9LbSqMxN87Gu5X/MDKGFTWvHzn20ub/Wm83II/gohUY9bGY6l8FtmEUxB3nRoPxqTxk6gqwIzmDfkjuDqZruwkuSiJ+cB2Kg1I/YNnnqRD6+5dP4iH1DrbpcUVgnlvxnOI/XkBYAqVToeH/OCLMFetn8S84PZNSDi3LIoozSrnoRcMCwfx+i4h/qeRNwGntVDoAFXCEvM6tsRQZsPWG4vh31hpVS0drne3jA0hi3TBZbKz/VgA6X5ayOgnwJ6gB8kbHZ3A5tBnIRUkajGO+V3OgBXMU7uA2q3r5lSsA+Z/Nt1iPZRpkcPgD58CR8uDBWSSYJVTKA074zKlfUjzEE/34Iy6qG4DaX6LffnRnzUzbFtGBeaaRQxtSoFfPdRwziErXcBrCbLcMMNz2LUw6aClw="
   matrix:
   - TARGET=386
   - TARGET=amd64
@@ -43,6 +44,7 @@ script:
  - |
    if [ "${TARGET}" == "amd64" ]; then
      GOARCH="${TARGET}" ./test_${TRAVIS_OS_NAME}.sh
+     docker build -t nfvpe/cni-route-override .
    else
      GOARCH="${TARGET}" ./build_linux.sh
    fi
@@ -58,6 +60,17 @@ deploy:
       condition:
         - "$TRAVIS_TAG =~ ^v[0-9].*$"
         - "$TARGET = amd64"
+    # Push images to Dockerhub on merge to master
+  - provider: script
+    on:
+      branch: master
+      condition:
+        - "$TARGET = amd64"
+    script: >
+      bash -c '
+      docker login -u "$REGISTRY_USER" -p "$REGISTRY_PASS";
+      docker push nfvpe/cni-route-override:latest;
+      echo done'
 
 notifications:
   email: false
