@@ -137,13 +137,24 @@ func deleteAllRoutes(res *current.Result) error {
 
 func deleteGWRoute(res *current.Result) error {
 	var err error
-	for _, netif := range res.Interfaces {
-		if netif.Sandbox != "" {
-			link, _ := netlink.LinkByName(netif.Name)
-			routes, _ := netlink.RouteList(link, netlink.FAMILY_ALL)
-			for _, nlroute := range routes {
-				if nlroute.Dst == nil {
-					err = netlink.RouteDel(&nlroute)
+	// fallback to eth0 if there is no interface in result
+	if res.Interfaces == nil {
+		link, _ := netlink.LinkByName("eth0")
+		routes, _ := netlink.RouteList(link, netlink.FAMILY_ALL)
+		for _, nlroute := range routes {
+			if nlroute.Dst == nil {
+				err = netlink.RouteDel(&nlroute)
+			}
+		}
+	} else {
+		for _, netif := range res.Interfaces {
+			if netif.Sandbox != "" {
+				link, _ := netlink.LinkByName(netif.Name)
+				routes, _ := netlink.RouteList(link, netlink.FAMILY_ALL)
+				for _, nlroute := range routes {
+					if nlroute.Dst == nil {
+						err = netlink.RouteDel(&nlroute)
+					}
 				}
 			}
 		}
@@ -154,15 +165,28 @@ func deleteGWRoute(res *current.Result) error {
 
 func deleteRoute(route *types.Route, res *current.Result) error {
 	var err error
-	for _, netif := range res.Interfaces {
-		if netif.Sandbox != "" {
-			link, _ := netlink.LinkByName(netif.Name)
-			routes, _ := netlink.RouteList(link, netlink.FAMILY_ALL)
-			for _, nlroute := range routes {
-				if nlroute.Dst != nil &&
-					nlroute.Dst.IP.Equal(route.Dst.IP) &&
-					nlroute.Dst.Mask.String() == route.Dst.Mask.String() {
-					err = netlink.RouteDel(&nlroute)
+	// fallback to eth0 if there is no interface in result
+	if res.Interfaces == nil {
+		link, _ := netlink.LinkByName("eth0")
+		routes, _ := netlink.RouteList(link, netlink.FAMILY_ALL)
+		for _, nlroute := range routes {
+			if nlroute.Dst != nil &&
+				nlroute.Dst.IP.Equal(route.Dst.IP) &&
+				nlroute.Dst.Mask.String() == route.Dst.Mask.String() {
+				err = netlink.RouteDel(&nlroute)
+			}
+		}
+	} else {
+		for _, netif := range res.Interfaces {
+			if netif.Sandbox != "" {
+				link, _ := netlink.LinkByName(netif.Name)
+				routes, _ := netlink.RouteList(link, netlink.FAMILY_ALL)
+				for _, nlroute := range routes {
+					if nlroute.Dst != nil &&
+						nlroute.Dst.IP.Equal(route.Dst.IP) &&
+						nlroute.Dst.Mask.String() == route.Dst.Mask.String() {
+						err = netlink.RouteDel(&nlroute)
+					}
 				}
 			}
 		}
