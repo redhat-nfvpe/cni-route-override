@@ -37,7 +37,7 @@ kubectl create -f deployments/daemonset-install.yaml
     },
     {
         "type" : "route-override",
-        "flushroutes" : "true",
+        "flushroutes" : true,
         "delroutes": [
         {
             "dst": "192.168.0.0/24"
