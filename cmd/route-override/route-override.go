@@ -126,7 +126,13 @@ func deleteAllRoutes(res *current.Result) error {
 			routes, _ := netlink.RouteList(link, netlink.FAMILY_ALL)
 			for _, route := range routes {
 				if route.Scope != netlink.SCOPE_LINK {
-					err = netlink.RouteDel(&route)
+					if route.Dst != nil {
+						if route.Dst.IP.IsLinkLocalUnicast() != true && route.Gw != nil {
+							err = netlink.RouteDel(&route)
+						}
+					} else {
+						err = netlink.RouteDel(&route)
+					}
 				}
 			}
 		}
@@ -220,10 +226,16 @@ func processRoutes(netnsname string, conf *RouteOverrideConfig) (*current.Result
 		// add "0.0.0.0/0" into delRoute to remove it from routing table/result
 		_, gwRoute, _ := net.ParseCIDR("0.0.0.0/0")
 		conf.DelRoutes = append(conf.DelRoutes, &types.Route{Dst: *gwRoute})
+		_, gwRoute, _ = net.ParseCIDR("::/0")
+		conf.DelRoutes = append(conf.DelRoutes, &types.Route{Dst: *gwRoute})
 
 		// delete given gateway address
 		for _, ips := range res.IPs {
-			ips.Gateway = net.IPv4zero
+			if ips.Version == "6" {
+				ips.Gateway = net.IPv6zero
+			} else {
+				ips.Gateway = net.IPv4zero
+			}
 		}
 	}
 
@@ -238,7 +250,7 @@ func processRoutes(netnsname string, conf *RouteOverrideConfig) (*current.Result
 						bytes.Equal(route.Dst.Mask, delroute.Dst.Mask) {
 						err = deleteRoute(delroute, res)
 						if err != nil {
-							fmt.Fprintf(os.Stderr, "XXX err: %v", err)
+							fmt.Fprintf(os.Stderr, "failed to delte route %v: %v", delroute, err)
 						}
 						continue NEXT
 					}
