@@ -33,7 +33,6 @@ before_install:
   - go get github.com/golang/dep/...
 
 install:
-  - $GOPATH/bin/dep ensure
   - go get -u golang.org/x/lint/golint
   - go get github.com/onsi/ginkgo/ginkgo
 

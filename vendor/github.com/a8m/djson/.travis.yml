@@ -1,5 +1,0 @@
-language: go
-go:
-  - tip
-scripts:
-  - go test
