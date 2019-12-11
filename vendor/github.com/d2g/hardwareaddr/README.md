@@ -1,4 +1,0 @@
-hardwareaddr
-============
-
-Generate Hardware Addresses
