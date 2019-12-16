@@ -1,10 +1,10 @@
-# github.com/containernetworking/cni v0.7.0-rc1
+# github.com/containernetworking/cni v0.7.1
 github.com/containernetworking/cni/pkg/skel
 github.com/containernetworking/cni/pkg/types
 github.com/containernetworking/cni/pkg/types/020
 github.com/containernetworking/cni/pkg/types/current
 github.com/containernetworking/cni/pkg/version
-# github.com/containernetworking/plugins v0.7.3-0.20190227201222-afd739193854
+# github.com/containernetworking/plugins v0.8.3
 github.com/containernetworking/plugins/pkg/ns
 github.com/containernetworking/plugins/pkg/testutils
 # github.com/hpcloud/tail v1.0.1-0.20180514194441-a1dbeea552b7
@@ -54,7 +54,7 @@ github.com/vishvananda/netns
 golang.org/x/net/html
 golang.org/x/net/html/atom
 golang.org/x/net/html/charset
-# golang.org/x/sys v0.0.0-20190403152447-81d4e9dc473e
+# golang.org/x/sys v0.0.0-20190616124812-15dcb6c0061f
 golang.org/x/sys/unix
 # golang.org/x/text v0.3.1-0.20180807135948-17ff2d5776d2
 golang.org/x/text/encoding
