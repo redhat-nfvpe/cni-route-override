@@ -1156,7 +1156,6 @@ var _ = Describe("route-override operations by conf", func() {
 					net.ParseIP("2001:DB8:1::1"))
 				Expect(err).NotTo(HaveOccurred())
 
-
 				return nil
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -1201,6 +1200,354 @@ var _ = Describe("route-override operations by conf", func() {
 				return nil
 			})
 			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	Context("ipv4/v6 mixed route manipulation", func() {
+		It("pass cni's check command", func() {
+			conf := []byte(`{
+			"name": "test",
+			"type": "route-override",
+			"cniVersion": "0.3.1",
+			"addroutes": [
+			{
+				"dst": "20.0.0.0/24"
+			}],
+			"prevResult": {
+				"interfaces": [
+				{
+					"name": "dummy0", "sandbox":"netns"
+				}],
+				"ips": [
+				{
+					"version": "4",
+					"address": "10.0.0.2/24",
+					"gateway": "10.0.0.254",
+					"interface": 0
+				},
+				{
+					"version": "6",
+					"address": "2001:DB8:1::2/64",
+					"gateway": "2001:DB8:1::1",
+					"interface": 0
+				}],
+				"routes": [
+				{
+					"dst": "0.0.0.0/0",
+					"gw": "10.0.0.254"
+				},
+				{
+					"dst": "30.0.0.0/24"
+				},
+				{
+					"dst": "::/0"
+				},
+				{
+					"dst": "2001:DB8:2::/64",
+					"gw": "2001:DB8:1::ffff"
+				}]
+			}
+		}`)
+
+			args := &skel.CmdArgs{
+				ContainerID: "dummy",
+				Netns:       targetNS.Path(),
+				IfName:      IFNAME,
+				StdinData:   conf,
+			}
+
+			// set address/route as fakeCNI plugin
+			err := targetNS.Do(func(ns.NetNS) error {
+				defer GinkgoRecover()
+				link, err := netlink.LinkByName(IFNAME)
+				Expect(err).NotTo(HaveOccurred())
+				err = netlink.LinkSetUp(link)
+				Expect(err).NotTo(HaveOccurred())
+
+				// addr 10.0.0.2/24
+				err = testAddAddr(link, net.IPv4(10, 0, 0, 2), net.CIDRMask(24, 32))
+				Expect(err).NotTo(HaveOccurred())
+
+				// add default gateway into IFNAME
+				err = testAddRoute(link,
+					net.IPv4(0, 0, 0, 0), net.CIDRMask(0, 0),
+					net.IPv4(10, 0, 0, 254))
+				Expect(err).NotTo(HaveOccurred())
+
+				//"dst": "30.0.0.0/24"
+				err = testAddRoute(link,
+					net.IPv4(30, 0, 0, 0), net.CIDRMask(24, 32),
+					net.IPv4(10, 0, 0, 254))
+				Expect(err).NotTo(HaveOccurred())
+
+				// addr 2001:DB8:1::2/64
+				err = testAddAddr(link, net.ParseIP("2001:DB8:1::2"), net.CIDRMask(64, 128))
+				Expect(err).NotTo(HaveOccurred())
+
+				// add default gateway into IFNAME
+				err = testAddRoute(link,
+					net.ParseIP("::"), net.CIDRMask(0, 0),
+					net.ParseIP("2001:DB8:1::1"))
+				Expect(err).NotTo(HaveOccurred())
+
+				// "dst": "2001:DB8:2::/64", "gw": "2001:DB8:1::ffff"
+				err = testAddRoute(link,
+					net.ParseIP("2001:DB8:2::"), net.CIDRMask(64, 128),
+					net.ParseIP("2001:DB8:1::ffff"))
+				Expect(err).NotTo(HaveOccurred())
+
+				return nil
+			})
+			Expect(err).NotTo(HaveOccurred())
+			err = originalNS.Do(func(ns.NetNS) error {
+				defer GinkgoRecover()
+
+				r, _, err := testutils.CmdAddWithArgs(args, func() error {
+					return cmdAdd(args)
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				_, err = current.GetResult(r)
+				Expect(err).NotTo(HaveOccurred())
+
+				err = testutils.CmdCheckWithArgs(args, func() error {
+					return cmdCheck(args)
+				})
+
+				Expect(err).NotTo(HaveOccurred())
+				return nil
+			})
+		})
+
+		It("check cni's check command with error", func() {
+			conf := []byte(`{
+			"name": "test",
+			"type": "route-override",
+			"cniVersion": "0.3.1",
+			"addroutes": [
+			{
+				"dst": "20.0.0.0/24"
+			}],
+			"prevResult": {
+				"interfaces": [
+				{
+					"name": "dummy0", "sandbox":"netns"
+				}],
+				"ips": [
+				{
+					"version": "4",
+					"address": "10.0.0.2/24",
+					"gateway": "10.0.0.254",
+					"interface": 0
+				},
+				{
+					"version": "6",
+					"address": "2001:DB8:1::2/64",
+					"gateway": "2001:DB8:1::1",
+					"interface": 0
+				}],
+				"routes": [
+				{
+					"dst": "0.0.0.0/0",
+					"gw": "10.0.0.254"
+				},
+				{
+					"dst": "30.0.0.0/24"
+				},
+				{
+					"dst": "::/0"
+				},
+				{
+					"dst": "2001:DB8:2::/64",
+					"gw": "2001:DB8:1::ffff"
+				}]
+			}
+		}`)
+
+			args := &skel.CmdArgs{
+				ContainerID: "dummy",
+				Netns:       targetNS.Path(),
+				IfName:      IFNAME,
+				StdinData:   conf,
+			}
+
+			// set address/route as fakeCNI plugin
+			err := targetNS.Do(func(ns.NetNS) error {
+				defer GinkgoRecover()
+				link, err := netlink.LinkByName(IFNAME)
+				Expect(err).NotTo(HaveOccurred())
+				err = netlink.LinkSetUp(link)
+				Expect(err).NotTo(HaveOccurred())
+
+				// addr 10.0.0.2/24
+				err = testAddAddr(link, net.IPv4(10, 0, 0, 2), net.CIDRMask(24, 32))
+				Expect(err).NotTo(HaveOccurred())
+
+				// add default gateway into IFNAME with different gw
+				err = testAddRoute(link,
+					net.IPv4(0, 0, 0, 0), net.CIDRMask(0, 0),
+					net.IPv4(10, 0, 0, 1))
+				Expect(err).NotTo(HaveOccurred())
+
+				//"dst": "30.0.0.0/24" with different gw
+				err = testAddRoute(link,
+					net.IPv4(30, 0, 0, 0), net.CIDRMask(24, 32),
+					net.IPv4(10, 0, 0, 1))
+				Expect(err).NotTo(HaveOccurred())
+
+				// addr 2001:DB8:1::2/64
+				err = testAddAddr(link, net.ParseIP("2001:DB8:1::2"), net.CIDRMask(64, 128))
+				Expect(err).NotTo(HaveOccurred())
+
+				// add default gateway into IFNAME
+				err = testAddRoute(link,
+					net.ParseIP("::"), net.CIDRMask(0, 0),
+					net.ParseIP("2001:DB8:1::1"))
+				Expect(err).NotTo(HaveOccurred())
+
+				// "dst": "2001:DB8:2::/64", "gw": "2001:DB8:1::ffff"
+				err = testAddRoute(link,
+					net.ParseIP("2001:DB8:2::"), net.CIDRMask(64, 128),
+					net.ParseIP("2001:DB8:1::ffff"))
+				Expect(err).NotTo(HaveOccurred())
+
+				return nil
+			})
+			Expect(err).NotTo(HaveOccurred())
+			err = originalNS.Do(func(ns.NetNS) error {
+				defer GinkgoRecover()
+
+				r, _, err := testutils.CmdAddWithArgs(args, func() error {
+					return cmdAdd(args)
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				_, err = current.GetResult(r)
+				Expect(err).NotTo(HaveOccurred())
+
+				err = testutils.CmdCheckWithArgs(args, func() error {
+					return cmdCheck(args)
+				})
+
+				Expect(err).To(HaveOccurred())
+				return nil
+			})
+		})
+
+		It("skip cni's check command", func() {
+			conf := []byte(`{
+			"name": "test",
+			"type": "route-override",
+			"cniVersion": "0.3.1",
+			"addroutes": [
+			{
+				"dst": "20.0.0.0/24"
+			}],
+			"skipcheck": true,
+			"prevResult": {
+				"interfaces": [
+				{
+					"name": "dummy0", "sandbox":"netns"
+				}],
+				"ips": [
+				{
+					"version": "4",
+					"address": "10.0.0.2/24",
+					"gateway": "10.0.0.254",
+					"interface": 0
+				},
+				{
+					"version": "6",
+					"address": "2001:DB8:1::2/64",
+					"gateway": "2001:DB8:1::1",
+					"interface": 0
+				}],
+				"routes": [
+				{
+					"dst": "0.0.0.0/0",
+					"gw": "10.0.0.254"
+				},
+				{
+					"dst": "30.0.0.0/24"
+				},
+				{
+					"dst": "::/0"
+				},
+				{
+					"dst": "2001:DB8:2::/64",
+					"gw": "2001:DB8:1::ffff"
+				}]
+			}
+		}`)
+
+			args := &skel.CmdArgs{
+				ContainerID: "dummy",
+				Netns:       targetNS.Path(),
+				IfName:      IFNAME,
+				StdinData:   conf,
+			}
+
+			// set address/route as fakeCNI plugin
+			err := targetNS.Do(func(ns.NetNS) error {
+				defer GinkgoRecover()
+				link, err := netlink.LinkByName(IFNAME)
+				Expect(err).NotTo(HaveOccurred())
+				err = netlink.LinkSetUp(link)
+				Expect(err).NotTo(HaveOccurred())
+
+				// addr 10.0.0.2/24
+				err = testAddAddr(link, net.IPv4(10, 0, 0, 2), net.CIDRMask(24, 32))
+				Expect(err).NotTo(HaveOccurred())
+
+				// add default gateway into IFNAME with different gw
+				err = testAddRoute(link,
+					net.IPv4(0, 0, 0, 0), net.CIDRMask(0, 0),
+					net.IPv4(10, 0, 0, 1))
+				Expect(err).NotTo(HaveOccurred())
+
+				//"dst": "30.0.0.0/24" with different gw
+				err = testAddRoute(link,
+					net.IPv4(30, 0, 0, 0), net.CIDRMask(24, 32),
+					net.IPv4(10, 0, 0, 1))
+				Expect(err).NotTo(HaveOccurred())
+
+				// addr 2001:DB8:1::2/64
+				err = testAddAddr(link, net.ParseIP("2001:DB8:1::2"), net.CIDRMask(64, 128))
+				Expect(err).NotTo(HaveOccurred())
+
+				// add default gateway into IFNAME
+				err = testAddRoute(link,
+					net.ParseIP("::"), net.CIDRMask(0, 0),
+					net.ParseIP("2001:DB8:1::1"))
+				Expect(err).NotTo(HaveOccurred())
+
+				// "dst": "2001:DB8:2::/64", "gw": "2001:DB8:1::ffff"
+				err = testAddRoute(link,
+					net.ParseIP("2001:DB8:2::"), net.CIDRMask(64, 128),
+					net.ParseIP("2001:DB8:1::ffff"))
+				Expect(err).NotTo(HaveOccurred())
+
+				return nil
+			})
+			Expect(err).NotTo(HaveOccurred())
+			err = originalNS.Do(func(ns.NetNS) error {
+				defer GinkgoRecover()
+
+				r, _, err := testutils.CmdAddWithArgs(args, func() error {
+					return cmdAdd(args)
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				_, err = current.GetResult(r)
+				Expect(err).NotTo(HaveOccurred())
+
+				err = testutils.CmdCheckWithArgs(args, func() error {
+					return cmdCheck(args)
+				})
+
+				Expect(err).NotTo(HaveOccurred())
+				return nil
+			})
 		})
 	})
 })
@@ -1550,12 +1897,6 @@ var _ = Describe("route-override operations by args", func() {
 					net.IPv4(10, 0, 0, 1))
 				Expect(err).NotTo(HaveOccurred())
 
-				// "dst": "20.0.0.0/24", "gw": "10.0.0.254"
-				err = testAddRoute(link,
-					net.IPv4(20, 0, 0, 0), net.CIDRMask(24, 32),
-					net.IPv4(10, 0, 0, 254))
-				Expect(err).NotTo(HaveOccurred())
-
 				return nil
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -1889,7 +2230,6 @@ var _ = Describe("route-override operations by args", func() {
 					net.ParseIP("::"), net.CIDRMask(0, 0),
 					net.ParseIP("2001:DB8:1::1"))
 				Expect(err).NotTo(HaveOccurred())
-
 
 				return nil
 			})

@@ -59,15 +59,16 @@ kubectl create -f deployments/daemonset-install.yaml
 * `flushgateway`: (bool, optional): true if you flush default route (gateway).
 * `delroutes`: (object, optional): list of routes add to the container namespace. Each route is a dictionary with "dst" and optional "gw" fields. If "gw" is omitted, value of "gateway" will be used.
 * `addroutes`: (object, optional): list of routes add to the container namespace. Each route is a dictionary with "dst" and optional "gw" fields. If "gw" is omitted, value of "gateway" will be used.
+* `skipcheck`: (bool, optional): true if you want to skip CNI's check command. Please set true if you will change routes after its launch
 
 ## Process Sequence
 
 `route-override` will manipulate the routes as following sequences:
 
 1. flush routes if `flushroutes` is enabled.
+1. flush gateway if `flushgateway` is enabled.
 1. delete routes in `delroutes` if `delroutes` has route and the route is exists in routes.
 1. add routes in `addroutes` if `addroutes` has route.
-1. flush gateway if `flushgateway` is enabled.
 
 ## Supported Arguments
 

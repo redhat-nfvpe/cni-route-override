@@ -23,7 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"os" //XXX
+	"os"
 
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
@@ -42,13 +42,13 @@ import (
 type RouteOverrideConfig struct {
 	types.NetConf
 
-	//RawPrevResult map[string]interface{} `json:"prevResult,omitempty"`
 	PrevResult *current.Result `json:"-"`
 
 	FlushRoutes  bool           `json:"flushroutes,omitempty"`
 	FlushGateway bool           `json:"flushgateway,omitempty"`
 	DelRoutes    []*types.Route `json:"delroutes"`
 	AddRoutes    []*types.Route `json:"addroutes"`
+	SkipCheck    bool           `json:"skipcheck,omitempty"`
 
 	Args *struct {
 		A *IPAMArgs `json:"cni"`
@@ -61,6 +61,7 @@ type IPAMArgs struct {
 	FlushGateway *bool          `json:"flushgateway,omitempty"`
 	DelRoutes    []*types.Route `json:"delroutes,omitempty"`
 	AddRoutes    []*types.Route `json:"addroutes,omitempty"`
+	SkipCheck    *bool          `json:"skipcheck,omitempty"`
 }
 
 /*
@@ -91,6 +92,10 @@ func parseConf(data []byte, envArgs string) (*RouteOverrideConfig, error) {
 
 		if conf.Args.A.AddRoutes != nil {
 			conf.AddRoutes = conf.Args.A.AddRoutes
+		}
+
+		if conf.Args.A.SkipCheck != nil {
+			conf.SkipCheck = *conf.Args.A.SkipCheck
 		}
 
 	}
@@ -262,6 +267,10 @@ func processRoutes(netnsname string, conf *RouteOverrideConfig) (*current.Result
 			deleteAllRoutes(res)
 		}
 
+		if conf.FlushGateway {
+			deleteGWRoute(res)
+		}
+
 		// Get container IF name
 		var containerIFName string
 		for _, i := range res.Interfaces {
@@ -270,14 +279,13 @@ func processRoutes(netnsname string, conf *RouteOverrideConfig) (*current.Result
 				break
 			}
 		}
+		// Add route
 		dev, _ := netlink.LinkByName(containerIFName)
 		for _, route := range conf.AddRoutes {
 			newRoutes = append(newRoutes, route)
-			addRoute(dev, route)
-		}
-
-		if conf.FlushGateway {
-			deleteGWRoute(res)
+			if err := addRoute(dev, route); err != nil {
+				fmt.Fprintf(os.Stderr, "failed to add route: %v: %v", route, err)
+			}
 		}
 
 		return nil
@@ -308,12 +316,96 @@ func cmdDel(args *skel.CmdArgs) error {
 	return nil
 }
 
-func cmdGet(args *skel.CmdArgs) error {
-	// TODO: implement
-	return fmt.Errorf("not implemented")
+func cmdCheck(args *skel.CmdArgs) error {
+	// Parse previous result
+	overrideConf, err := parseConf(args.StdinData, args.Args)
+
+	if err != nil {
+		return err
+	}
+
+	// if skipcheck is true, skip it
+	if overrideConf.SkipCheck == true {
+		return nil
+	}
+
+	if overrideConf.PrevResult == nil {
+		return fmt.Errorf("Required prevResult missing")
+	}
+
+	if err := version.ParsePrevResult(&overrideConf.NetConf); err != nil {
+		return err
+	}
+
+	result, err := current.NewResultFromResult(overrideConf.PrevResult)
+	if err != nil {
+		return err
+	}
+
+	gateways := []net.IP{}
+	for _, i := range result.IPs {
+		gateways = append(gateways, i.Gateway)
+	}
+
+	err = ns.WithNetNSPath(args.Netns, func(_ ns.NetNS) error {
+		for _, cniRoute := range overrideConf.DelRoutes {
+			_, err := netlink.RouteGet(cniRoute.Dst.IP)
+			if err == nil {
+				return fmt.Errorf("route-override: route is not removed: %v", cniRoute)
+			}
+		}
+
+		for _, cniRoute := range result.Routes {
+			var routes []netlink.Route
+			if cniRoute.Dst.IP.Equal(net.ParseIP("0.0.0.0")) == true || cniRoute.Dst.IP.Equal(net.ParseIP("::")) {
+				family := netlink.FAMILY_ALL
+				if cniRoute.Dst.IP.To4() == nil {
+					family = netlink.FAMILY_V6
+				} else {
+					family = netlink.FAMILY_V4
+				}
+				filter := &netlink.Route{
+					Dst: nil,
+				}
+				routes, err = netlink.RouteListFiltered(family, filter, netlink.RT_FILTER_DST)
+				if err != nil {
+					return err
+				}
+			} else {
+				routes, err = netlink.RouteGet(cniRoute.Dst.IP)
+				if err != nil {
+					return err
+				}
+			}
+
+			if len(routes) != 1 {
+				return fmt.Errorf("route-override: got multiple routes: %v", routes)
+			}
+
+			// if gateway in cni result is nil, then lookup gateways in interface of cni result
+			if cniRoute.GW == nil {
+				found := false
+				for _, gw := range gateways {
+					if gw.Equal(routes[0].Gw) {
+						found = true
+					}
+				}
+				if found != true {
+					return fmt.Errorf("route-override: cannot find gateway %v in result: %v", cniRoute.GW, routes[0].Gw)
+				}
+			} else {
+				if routes[0].Gw.Equal(cniRoute.GW) != true {
+					return fmt.Errorf("route-override: failed to match route: %v %v", cniRoute, routes[0].Gw)
+				}
+			}
+		}
+		return nil
+	})
+
+	return err
 }
 
 func main() {
 	// TODO: implement plugin version
-	skel.PluginMain(cmdAdd, cmdGet, cmdDel, version.All, "TODO")
+	skel.PluginMain(cmdAdd, cmdCheck, cmdDel, version.All, "TODO")
 }
