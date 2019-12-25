@@ -8,6 +8,10 @@ metadata:
     tier: node
     app: route-override
 spec:
+  selector:
+    matchLabels:
+      tier: node
+      app: route-override
   updateStrategy:
     type: RollingUpdate
   template:
@@ -19,27 +23,27 @@ spec:
       nodeSelector:
         beta.kubernetes.io/arch: amd64
       tolerations:
-      - operator: Exists
-        effect: NoSchedule
+        - operator: Exists
+          effect: NoSchedule
       containers:
-      - name: route-override
-        image: nfvpe/cni-route-override:latest
-        command: ["/bin/sh"]
-        args:
-          - "-c"
-          - "cp -f /route-override /host/opt/cni/bin/; sleep 1000000000000"
-        resources:
-          requests:
-            cpu: "100m"
-            memory: "50Mi"
-          limits:
-            cpu: "100m"
-            memory: "50Mi"
-        securityContext:
-          privileged: true
-        volumeMounts:
-        - name: cnibin
-          mountPath: /host/opt/cni/bin
+        - name: route-override
+          image: nfvpe/cni-route-override:latest
+          command: ["/bin/sh"]
+          args:
+            - "-c"
+            - "cp -f /route-override /host/opt/cni/bin/; sleep 1000000000000"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "50Mi"
+            limits:
+              cpu: "100m"
+              memory: "50Mi"
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: cnibin
+              mountPath: /host/opt/cni/bin
       volumes:
         - name: cnibin
           hostPath:
