@@ -10,6 +10,6 @@ require (
 	github.com/onsi/gomega v1.5.0
 	github.com/vishvananda/netlink v1.0.0
 	golang.org/x/net v0.0.0-20190320064053-1272bf9dcd53 // indirect
-	golang.org/x/text v0.3.1-0.20180807135948-17ff2d5776d2 // indirect
+	golang.org/x/text v0.3.3 // indirect
 	gopkg.in/fsnotify/fsnotify.v1 v1.4.7 // indirect
 )
