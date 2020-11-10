@@ -255,7 +255,7 @@ func processRoutes(netnsname string, conf *RouteOverrideConfig) (*current.Result
 						bytes.Equal(route.Dst.Mask, delroute.Dst.Mask) {
 						err = deleteRoute(delroute, res)
 						if err != nil {
-							fmt.Fprintf(os.Stderr, "failed to delte route %v: %v", delroute, err)
+							fmt.Fprintf(os.Stderr, "failed to delete route %v: %v", delroute, err)
 						}
 						continue NEXT
 					}
