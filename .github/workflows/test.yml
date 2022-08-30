@@ -21,21 +21,21 @@ jobs:
       with:
         exclude: "./vendor/..."
 
-      - name: Install test binaries
-        env:
-          GO111MODULE: off
-        run: |
-          go get github.com/containernetworking/cni/cnitool
-          go get github.com/mattn/goveralls
-          go get github.com/modocache/gover
+    - name: Install test binaries
+      run: |
+        go install github.com/containernetworking/cni/cnitool@latest
+        go install github.com/mattn/goveralls@latest
+        go install github.com/modocache/gover@latest
 
     - name: Test
-      run: PATH=$PATH:$(go env GOPATH)/bin COVERALLS=1 ./test_linux.sh
+      run: |
+        COVERALLS=1 ./test_linux.sh
+        gover
 
     - name: Send coverage
       uses: shogo82148/actions-goveralls@v1
       with:
-        path-to-profile: coverage.out
+        path-to-profile: gover.coverprofile
         flag-name: Go-${{ matrix.go }}
         parallel: true
 

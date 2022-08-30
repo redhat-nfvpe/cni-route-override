@@ -15,7 +15,7 @@ source ./build_linux.sh
 echo "Running tests"
 
 function testrun {
-    sudo -E bash -c "umask 0; PATH=${GOPATH}/bin:$(pwd)/bin:${PATH} go test $@"
+    sudo -E bash -c "umask 0; PATH=$(pwd)/bin:${PATH} go test $@"
 }
 
 COVERALLS=${COVERALLS:-""}
