@@ -269,6 +269,22 @@ func ContainElement(element interface{}) types.GomegaMatcher {
 	}
 }
 
+//BeElementOf succeeds if actual is contained in the passed in elements.
+//BeElementOf() always uses Equal() to perform the match.
+//When the passed in elements are comprised of a single element that is either an Array or Slice, BeElementOf() behaves
+//as the reverse of ContainElement() that operates with Equal() to perform the match.
+//    Expect(2).Should(BeElementOf([]int{1, 2}))
+//    Expect(2).Should(BeElementOf([2]int{1, 2}))
+//Otherwise, BeElementOf() provides a syntactic sugar for Or(Equal(_), Equal(_), ...):
+//    Expect(2).Should(BeElementOf(1, 2))
+//
+//Actual must be typed.
+func BeElementOf(elements ...interface{}) types.GomegaMatcher {
+	return &matchers.BeElementOfMatcher{
+		Elements: elements,
+	}
+}
+
 //ConsistOf succeeds if actual contains precisely the elements passed into the matcher.  The ordering of the elements does not matter.
 //By default ConsistOf() uses Equal() to match the elements, however custom matchers can be passed in instead.  Here are some examples:
 //
@@ -286,6 +302,20 @@ func ContainElement(element interface{}) types.GomegaMatcher {
 //Note that Go's type system does not allow you to write this as ConsistOf([]string{"FooBar", "Foo"}...) as []string and []interface{} are different types - hence the need for this special rule.
 func ConsistOf(elements ...interface{}) types.GomegaMatcher {
 	return &matchers.ConsistOfMatcher{
+		Elements: elements,
+	}
+}
+
+//ContainElements succeeds if actual contains the passed in elements. The ordering of the elements does not matter.
+//By default ContainElements() uses Equal() to match the elements, however custom matchers can be passed in instead. Here are some examples:
+//
+//    Expect([]string{"Foo", "FooBar"}).Should(ContainElements("FooBar"))
+//    Expect([]string{"Foo", "FooBar"}).Should(ContainElements(ContainSubstring("Bar"), "Foo"))
+//
+//Actual must be an array, slice or map.
+//For maps, ContainElements searches through the map's values.
+func ContainElements(elements ...interface{}) types.GomegaMatcher {
+	return &matchers.ContainElementsMatcher{
 		Elements: elements,
 	}
 }
@@ -309,6 +339,34 @@ func HaveKeyWithValue(key interface{}, value interface{}) types.GomegaMatcher {
 	return &matchers.HaveKeyWithValueMatcher{
 		Key:   key,
 		Value: value,
+	}
+}
+
+//HaveField succeeds if actual is a struct and the value at the passed in field
+//matches the passed in matcher.  By default HaveField used Equal() to perform the match,
+//however a matcher can be passed in in stead.
+//
+//The field must be a string that resolves to the name of a field in the struct.  Structs can be traversed
+//using the '.' delimiter.  If the field ends with '()' a method named field is assumed to exist on the struct and is invoked.
+//Such methods must take no arguments and return a single value:
+//
+//    type Book struct {
+//        Title string
+//        Author Person
+//    }
+//    type Person struct {
+//        FirstName string
+//        LastName string
+//		  DOB time.Time
+//    }
+//    Expect(book).To(HaveField("Title", "Les Miserables"))
+//    Expect(book).To(HaveField("Title", ContainSubstring("Les"))
+//    Expect(book).To(HaveField("Person.FirstName", Equal("Victor"))
+//    Expect(book).To(HaveField("Person.DOB.Year()", BeNumerically("<", 1900))
+func HaveField(field string, expected interface{}) types.GomegaMatcher {
+	return &matchers.HaveFieldMatcher{
+		Field:    field,
+		Expected: expected,
 	}
 }
 
@@ -360,6 +418,16 @@ func Panic() types.GomegaMatcher {
 	return &matchers.PanicMatcher{}
 }
 
+//PanicWith succeeds if actual is a function that, when invoked, panics with a specific value.
+//Actual must be a function that takes no arguments and returns no results.
+//
+//By default PanicWith uses Equal() to perform the match, however a
+//matcher can be passed in instead:
+//    Expect(fn).Should(PanicWith(MatchRegexp(`.+Foo$`)))
+func PanicWith(expected interface{}) types.GomegaMatcher {
+	return &matchers.PanicMatcher{Expected: expected}
+}
+
 //BeAnExistingFile succeeds if a file exists.
 //Actual must be a string representing the abs path to the file being checked.
 func BeAnExistingFile() types.GomegaMatcher {
@@ -376,6 +444,34 @@ func BeARegularFile() types.GomegaMatcher {
 //Actual must be a string representing the abs path to the file being checked.
 func BeADirectory() types.GomegaMatcher {
 	return &matchers.BeADirectoryMatcher{}
+}
+
+//HaveHTTPStatus succeeds if the Status or StatusCode field of an HTTP response matches.
+//Actual must be either a *http.Response or *httptest.ResponseRecorder.
+//Expected must be either an int or a string.
+//  Expect(resp).Should(HaveHTTPStatus(http.StatusOK))   // asserts that resp.StatusCode == 200
+//  Expect(resp).Should(HaveHTTPStatus("404 Not Found")) // asserts that resp.Status == "404 Not Found"
+//  Expect(resp).Should(HaveHTTPStatus(http.StatusOK, http.StatusNoContent))   // asserts that resp.StatusCode == 200 || resp.StatusCode == 204
+func HaveHTTPStatus(expected ...interface{}) types.GomegaMatcher {
+	return &matchers.HaveHTTPStatusMatcher{Expected: expected}
+}
+
+// HaveHTTPHeaderWithValue succeeds if the header is found and the value matches.
+// Actual must be either a *http.Response or *httptest.ResponseRecorder.
+// Expected must be a string header name, followed by a header value which
+// can be a string, or another matcher.
+func HaveHTTPHeaderWithValue(header string, value interface{}) types.GomegaMatcher {
+	return &matchers.HaveHTTPHeaderWithValueMatcher{
+		Header: header,
+		Value:  value,
+	}
+}
+
+// HaveHTTPBody matches if the body matches.
+// Actual must be either a *http.Response or *httptest.ResponseRecorder.
+// Expected must be either a string, []byte, or other matcher
+func HaveHTTPBody(expected interface{}) types.GomegaMatcher {
+	return &matchers.HaveHTTPBodyMatcher{Expected: expected}
 }
 
 //And succeeds only if all of the given matchers succeed.
@@ -417,11 +513,24 @@ func Not(matcher types.GomegaMatcher) types.GomegaMatcher {
 }
 
 //WithTransform applies the `transform` to the actual value and matches it against `matcher`.
-//The given transform must be a function of one parameter that returns one value.
+//The given transform must be either a function of one parameter that returns one value or a
+// function of one parameter that returns two values, where the second value must be of the
+// error type.
 //  var plus1 = func(i int) int { return i + 1 }
 //  Expect(1).To(WithTransform(plus1, Equal(2))
+//
+//   var failingplus1 = func(i int) (int, error) { return 42, "this does not compute" }
+//   Expect(1).To(WithTransform(failingplus1, Equal(2)))
 //
 //And(), Or(), Not() and WithTransform() allow matchers to be composed into complex expressions.
 func WithTransform(transform interface{}, matcher types.GomegaMatcher) types.GomegaMatcher {
 	return matchers.NewWithTransformMatcher(transform, matcher)
+}
+
+//Satisfy matches the actual value against the `predicate` function.
+//The given predicate must be a function of one paramter that returns bool.
+//  var isEven = func(i int) bool { return i%2 == 0 }
+//  Expect(2).To(Satisfy(isEven))
+func Satisfy(predicate interface{}) types.GomegaMatcher {
+	return matchers.NewSatisfyMatcher(predicate)
 }

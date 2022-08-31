@@ -27,7 +27,7 @@ import (
 
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
-	"github.com/containernetworking/cni/pkg/types/current"
+	current "github.com/containernetworking/cni/pkg/types/100"
 	"github.com/containernetworking/cni/pkg/version"
 	"github.com/containernetworking/plugins/pkg/ns"
 
@@ -236,7 +236,7 @@ func processRoutes(netnsname string, conf *RouteOverrideConfig) (*current.Result
 
 		// delete given gateway address
 		for _, ips := range res.IPs {
-			if ips.Version == "6" {
+			if ips.Address.IP.To4() == nil {
 				ips.Gateway = net.IPv6zero
 			} else {
 				ips.Gateway = net.IPv4zero
