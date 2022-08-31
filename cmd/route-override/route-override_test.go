@@ -21,7 +21,7 @@ import (
 	"testing"
 
 	"github.com/containernetworking/cni/pkg/skel"
-	"github.com/containernetworking/cni/pkg/types/current"
+	current "github.com/containernetworking/cni/pkg/types/100"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/containernetworking/plugins/pkg/testutils"
 
@@ -72,7 +72,7 @@ func testHasRoute(routes []netlink.Route, dst *net.IPNet) bool {
 	return false
 }
 
-var _ = Describe("route-override operations by conf", func() {
+var _ = Describe("route-override operations by conf, cniVersion:0.4.0", func() {
 	const IFNAME string = "dummy0"
 	var originalNS ns.NetNS
 	var targetNS ns.NetNS
@@ -110,35 +110,36 @@ var _ = Describe("route-override operations by conf", func() {
 	Context("ipv4 route manipulation", func() {
 		It("passes prevResult through unchanged", func() {
 			conf := []byte(`{
-			"name": "test",
-			"type": "route-override",
-			"cniVersion": "0.3.1",
-			"prevResult": {
-				"interfaces": [
-				{
-					"name": "dummy0",
-					"sandbox":"netns"
-				}],
-				"ips": [
-				{
-					"version": "4",
-					"address": "10.0.0.2/24",
-					"gateway": "10.0.0.1",
-					"interface": 0
-				}],
-				"routes": [
-				{
-					"dst": "0.0.0.0/0"
-				},
-				{
-					"dst": "30.0.0.0/24"
-				},
-				{
-					"dst": "20.0.0.0/24",
-					"gw": "10.0.0.254"
-				}]
-			}
-		}`)
+				"name": "test",
+				"type": "route-override",
+				"cniVersion": "0.3.1",
+				"prevResult": {
+					"cniVersion": "0.3.1",
+					"interfaces": [
+					{
+						"name": "dummy0",
+						"sandbox":"netns"
+					}],
+					"ips": [
+					{
+						"version": "4",
+						"address": "10.0.0.2/24",
+						"gateway": "10.0.0.1",
+						"interface": 0
+					}],
+					"routes": [
+					{
+						"dst": "0.0.0.0/0"
+					},
+					{
+						"dst": "30.0.0.0/24"
+					},
+					{
+						"dst": "20.0.0.0/24",
+						"gw": "10.0.0.254"
+					}]
+				}
+			}`)
 
 			args := &skel.CmdArgs{
 				ContainerID: "dummy",
@@ -225,36 +226,37 @@ var _ = Describe("route-override operations by conf", func() {
 
 		It("check flushroutes clears all routes", func() {
 			conf := []byte(`{
-			"name": "test",
-			"type": "route-override",
-			"cniVersion": "0.3.1",
-			"flushroutes": true,
-			"prevResult": {
-				"interfaces": [
-				{
-					"name": "dummy0",
-					"sandbox":"netns"
-				}],
-				"ips": [
-				{
-					"version": "4",
-					"address": "10.0.0.2/24",
-					"gateway": "10.0.0.1",
-					"interface": 0
-				}],
-				"routes": [
-				{
-					"dst": "0.0.0.0/0"
-				},
-				{
-					"dst": "30.0.0.0/24"
-				},
-				{
-					"dst": "20.0.0.0/24",
-					"gw": "10.0.0.254"
-				}]
-			}
-		}`)
+				"name": "test",
+				"type": "route-override",
+				"cniVersion": "0.3.1",
+				"flushroutes": true,
+				"prevResult": {
+					"cniVersion": "0.3.1",
+					"interfaces": [
+					{
+						"name": "dummy0",
+						"sandbox":"netns"
+					}],
+					"ips": [
+					{
+						"version": "4",
+						"address": "10.0.0.2/24",
+						"gateway": "10.0.0.1",
+						"interface": 0
+					}],
+					"routes": [
+					{
+						"dst": "0.0.0.0/0"
+					},
+					{
+						"dst": "30.0.0.0/24"
+					},
+					{
+						"dst": "20.0.0.0/24",
+						"gw": "10.0.0.254"
+					}]
+				}
+			}`)
 
 			args := &skel.CmdArgs{
 				ContainerID: "dummy",
@@ -313,7 +315,7 @@ var _ = Describe("route-override operations by conf", func() {
 				Expect(result.Interfaces[0].Name).To(Equal(IFNAME))
 				Expect(len(result.IPs)).To(Equal(1))
 				Expect(result.IPs[0].Address.String()).To(Equal("10.0.0.2/24"))
-				Expect(result.Routes).To(BeNil())
+				Expect(len(result.Routes)).To(Equal(0))
 
 				Expect(err).NotTo(HaveOccurred())
 
@@ -339,38 +341,39 @@ var _ = Describe("route-override operations by conf", func() {
 
 		It("check flushgateway clears gw routes", func() {
 			conf := []byte(`{
-			"name": "test",
-			"type": "route-override",
-			"cniVersion": "0.3.1",
-			"flushgateway": true,
-			"prevResult": {
-				"interfaces": [
-				{
-					"name": "dummy0",
-					"sandbox":"netns"
-				}],
-				"ips": [
-				{
-					"version": "4",
-					"address": "10.0.0.2/24",
-					"gateway": "10.0.0.1",
-					"interface": 0
-				}],
-				"routes": [
-				{
-					"dst": "0.0.0.0/0",
-					"gw": "10.0.0.1"
-				},
-				{
-					"dst": "30.0.0.0/24"
-				},
-				{
-					"dst": "20.0.0.0/24",
-					"gw": "10.0.0.254"
+				"name": "test",
+				"type": "route-override",
+				"cniVersion": "0.3.1",
+				"flushgateway": true,
+				"prevResult": {
+					"cniVersion": "0.3.1",
+					"interfaces": [
+					{
+						"name": "dummy0",
+						"sandbox":"netns"
+					}],
+					"ips": [
+					{
+						"version": "4",
+						"address": "10.0.0.2/24",
+						"gateway": "10.0.0.1",
+						"interface": 0
+					}],
+					"routes": [
+					{
+						"dst": "0.0.0.0/0",
+						"gw": "10.0.0.1"
+					},
+					{
+						"dst": "30.0.0.0/24"
+					},
+					{
+						"dst": "20.0.0.0/24",
+						"gw": "10.0.0.254"
+					}
+					]
 				}
-			]
-		}
-	}`)
+			}`)
 
 			args := &skel.CmdArgs{
 				ContainerID: "dummy",
@@ -452,37 +455,38 @@ var _ = Describe("route-override operations by conf", func() {
 
 		It("check delroutes works", func() {
 			conf := []byte(`{
-			"name": "test",
-			"type": "route-override",
-			"cniVersion": "0.3.1",
-			"delroutes": [ { "dst": "20.0.0.0/24" } ],
-			"prevResult": {
-				"interfaces": [
-				{
-					"name": "dummy0",
-					"sandbox":"netns"
-				}],
-				"ips": [
-				{
-					"version": "4",
-					"address": "10.0.0.2/24",
-					"gateway": "10.0.0.1",
-					"interface": 0
-				}],
-				"routes": [
-				{
-					"dst": "0.0.0.0/0",
-					"gw": "10.0.0.1"
-				},
-				{
-					"dst": "30.0.0.0/24"
-				},
-				{
-					"dst": "20.0.0.0/24",
-					"gw": "10.0.0.254"
-				}]
-			}
-		}`)
+				"name": "test",
+				"type": "route-override",
+				"cniVersion": "0.3.1",
+				"delroutes": [ { "dst": "20.0.0.0/24" } ],
+				"prevResult": {
+					"cniVersion": "0.3.1",
+					"interfaces": [
+					{
+						"name": "dummy0",
+						"sandbox":"netns"
+					}],
+					"ips": [
+					{
+						"version": "4",
+						"address": "10.0.0.2/24",
+						"gateway": "10.0.0.1",
+						"interface": 0
+					}],
+					"routes": [
+					{
+						"dst": "0.0.0.0/0",
+						"gw": "10.0.0.1"
+					},
+					{
+						"dst": "30.0.0.0/24"
+					},
+					{
+						"dst": "20.0.0.0/24",
+						"gw": "10.0.0.254"
+					}]
+				}
+			}`)
 
 			args := &skel.CmdArgs{
 				ContainerID: "dummy",
@@ -568,35 +572,36 @@ var _ = Describe("route-override operations by conf", func() {
 
 		It("check addroutes works", func() {
 			conf := []byte(`{
-			"name": "test",
-			"type": "route-override",
-			"cniVersion": "0.3.1",
-			"addroutes": [
-			{
-				"dst": "20.0.0.0/24"
-			}],
-			"prevResult": {
-				"interfaces": [
+				"name": "test",
+				"type": "route-override",
+				"cniVersion": "0.3.1",
+				"addroutes": [
 				{
-					"name": "dummy0", "sandbox":"netns"
+					"dst": "20.0.0.0/24"
 				}],
-				"ips": [
-				{
-					"version": "4",
-					"address": "10.0.0.2/24",
-					"gateway": "10.0.0.254",
-					"interface": 0
-				}],
-				"routes": [
-				{
-					"dst": "0.0.0.0/0",
-					"gw": "10.0.0.254"
-				},
-				{
-					"dst": "30.0.0.0/24"
-				}]
-			}
-		}`)
+				"prevResult": {
+					"cniVersion": "0.3.1",
+					"interfaces": [
+					{
+						"name": "dummy0", "sandbox":"netns"
+					}],
+					"ips": [
+					{
+						"version": "4",
+						"address": "10.0.0.2/24",
+						"gateway": "10.0.0.254",
+						"interface": 0
+					}],
+					"routes": [
+					{
+						"dst": "0.0.0.0/0",
+						"gw": "10.0.0.254"
+					},
+					{
+						"dst": "30.0.0.0/24"
+					}]
+				}
+			}`)
 
 			args := &skel.CmdArgs{
 				ContainerID: "dummy",
@@ -686,32 +691,33 @@ var _ = Describe("route-override operations by conf", func() {
 	Context("ipv6 route manipulation", func() {
 		It("passes prevResult through unchanged", func() {
 			conf := []byte(`{
-			"name": "test",
-			"type": "route-override",
-			"cniVersion": "0.3.1",
-			"prevResult": {
-				"interfaces": [
-				{
-					"name": "dummy0",
-					"sandbox":"netns"
-				}],
-				"ips": [
-				{
-					"version": "6",
-					"address": "2001:DB8:1::2/64",
-					"gateway": "2001:DB8:1::1",
-					"interface": 0
-				}],
-				"routes": [
-				{
-					"dst": "::/0"
-				},
-				{
-					"dst": "2001:DB8:2::/64",
-					"gw": "2001:DB8:1::ffff"
-				}]
-			}
-		}`)
+				"name": "test",
+				"type": "route-override",
+				"cniVersion": "0.3.1",
+				"prevResult": {
+					"cniVersion": "0.3.1",
+					"interfaces": [
+					{
+						"name": "dummy0",
+						"sandbox":"netns"
+					}],
+					"ips": [
+					{
+						"version": "6",
+						"address": "2001:DB8:1::2/64",
+						"gateway": "2001:DB8:1::1",
+						"interface": 0
+					}],
+					"routes": [
+					{
+						"dst": "::/0"
+					},
+					{
+						"dst": "2001:DB8:2::/64",
+						"gw": "2001:DB8:1::ffff"
+					}]
+				}
+			}`)
 
 			args := &skel.CmdArgs{
 				ContainerID: "dummy",
@@ -790,33 +796,34 @@ var _ = Describe("route-override operations by conf", func() {
 
 		It("check flushroutes clears all routes", func() {
 			conf := []byte(`{
-			"name": "test",
-			"type": "route-override",
-			"cniVersion": "0.3.1",
-			"flushroutes": true,
-			"prevResult": {
-				"interfaces": [
-				{
-					"name": "dummy0",
-					"sandbox":"netns"
-				}],
-				"ips": [
-				{
-					"version": "6",
-					"address": "2001:DB8:1::2/64",
-					"gateway": "2001:DB8:1::1",
-					"interface": 0
-				}],
-				"routes": [
-				{
-					"dst": "::/0"
-				},
-				{
-					"dst": "2001:DB8:2::/64",
-					"gw": "2001:DB8:1::ffff"
-				}]
-			}
-		}`)
+				"name": "test",
+				"type": "route-override",
+				"cniVersion": "0.3.1",
+				"flushroutes": true,
+				"prevResult": {
+					"cniVersion": "0.3.1",
+					"interfaces": [
+					{
+						"name": "dummy0",
+						"sandbox":"netns"
+					}],
+					"ips": [
+					{
+						"version": "6",
+						"address": "2001:DB8:1::2/64",
+						"gateway": "2001:DB8:1::1",
+						"interface": 0
+					}],
+					"routes": [
+					{
+						"dst": "::/0"
+					},
+					{
+						"dst": "2001:DB8:2::/64",
+						"gw": "2001:DB8:1::ffff"
+					}]
+				}
+			}`)
 
 			args := &skel.CmdArgs{
 				ContainerID: "dummy",
@@ -869,7 +876,7 @@ var _ = Describe("route-override operations by conf", func() {
 				Expect(result.Interfaces[0].Name).To(Equal(IFNAME))
 				Expect(len(result.IPs)).To(Equal(1))
 				Expect(result.IPs[0].Address.String()).To(Equal("2001:db8:1::2/64"))
-				Expect(result.Routes).To(BeNil())
+				Expect(len(result.Routes)).To(Equal(0))
 
 				Expect(err).NotTo(HaveOccurred())
 
@@ -895,34 +902,35 @@ var _ = Describe("route-override operations by conf", func() {
 
 		It("check flushgateway clears gw routes", func() {
 			conf := []byte(`{
-			"name": "test",
-			"type": "route-override",
-			"cniVersion": "0.3.1",
-			"flushgateway": true,
-			"prevResult": {
-				"interfaces": [
-				{
-					"name": "dummy0",
-					"sandbox":"netns"
-				}],
-				"ips": [
-				{
-					"version": "6",
-					"address": "2001:DB8:1::2/64",
-					"gateway": "2001:DB8:1::1",
-					"interface": 0
-				}],
-				"routes": [
-				{
-					"dst": "::/0"
-				},
-				{
-					"dst": "2001:DB8:2::/64",
-					"gw": "2001:DB8:1::ffff"
+				"name": "test",
+				"type": "route-override",
+				"cniVersion": "0.3.1",
+				"flushgateway": true,
+				"prevResult": {
+					"cniVersion": "0.3.1",
+					"interfaces": [
+					{
+						"name": "dummy0",
+						"sandbox":"netns"
+					}],
+					"ips": [
+					{
+						"version": "6",
+						"address": "2001:DB8:1::2/64",
+						"gateway": "2001:DB8:1::1",
+						"interface": 0
+					}],
+					"routes": [
+					{
+						"dst": "::/0"
+					},
+					{
+						"dst": "2001:DB8:2::/64",
+						"gw": "2001:DB8:1::ffff"
+					}
+					]
 				}
-			]
-		}
-	}`)
+			}`)
 
 			args := &skel.CmdArgs{
 				ContainerID: "dummy",
@@ -997,33 +1005,34 @@ var _ = Describe("route-override operations by conf", func() {
 
 		It("check delroutes works", func() {
 			conf := []byte(`{
-			"name": "test",
-			"type": "route-override",
-			"cniVersion": "0.3.1",
-			"delroutes": [ { "dst": "2001:DB8:2::/64" } ],
-			"prevResult": {
-				"interfaces": [
-				{
-					"name": "dummy0",
-					"sandbox":"netns"
-				}],
-				"ips": [
-				{
-					"version": "6",
-					"address": "2001:DB8:1::2/64",
-					"gateway": "2001:DB8:1::1",
-					"interface": 0
-				}],
-				"routes": [
-				{
-					"dst": "::/0"
-				},
-				{
-					"dst": "2001:DB8:2::/64",
-					"gw": "2001:DB8:1::ffff"
-				}]
-			}
-		}`)
+				"name": "test",
+				"type": "route-override",
+				"cniVersion": "0.3.1",
+				"delroutes": [ { "dst": "2001:DB8:2::/64" } ],
+				"prevResult": {
+					"cniVersion": "0.3.1",
+					"interfaces": [
+					{
+						"name": "dummy0",
+						"sandbox":"netns"
+					}],
+					"ips": [
+					{
+						"version": "6",
+						"address": "2001:DB8:1::2/64",
+						"gateway": "2001:DB8:1::1",
+						"interface": 0
+					}],
+					"routes": [
+					{
+						"dst": "::/0"
+					},
+					{
+						"dst": "2001:DB8:2::/64",
+						"gw": "2001:DB8:1::ffff"
+					}]
+				}
+			}`)
 
 			args := &skel.CmdArgs{
 				ContainerID: "dummy",
@@ -1104,32 +1113,33 @@ var _ = Describe("route-override operations by conf", func() {
 
 		It("check addroutes works", func() {
 			conf := []byte(`{
-			"name": "test",
-			"type": "route-override",
-			"cniVersion": "0.3.1",
-			"addroutes": [
-			{
-				"dst": "2001:DB8:2::/64",
-				"gw": "2001:DB8:1::fffe"
-			}],
-			"prevResult": {
-				"interfaces": [
+				"name": "test",
+				"type": "route-override",
+				"cniVersion": "0.3.1",
+				"addroutes": [
 				{
-					"name": "dummy0", "sandbox":"netns"
+					"dst": "2001:DB8:2::/64",
+					"gw": "2001:DB8:1::fffe"
 				}],
-				"ips": [
-				{
-					"version": "6",
-					"address": "2001:DB8:1::2/64",
-					"gateway": "2001:DB8:1::1",
-					"interface": 0
-				}],
-				"routes": [
-				{
-					"dst": "::/0"
-				}]
-			}
-		}`)
+				"prevResult": {
+					"cniVersion": "0.3.1",
+					"interfaces": [
+					{
+						"name": "dummy0", "sandbox":"netns"
+					}],
+					"ips": [
+					{
+						"version": "6",
+						"address": "2001:DB8:1::2/64",
+						"gateway": "2001:DB8:1::1",
+						"interface": 0
+					}],
+					"routes": [
+					{
+						"dst": "::/0"
+					}]
+				}
+			}`)
 
 			args := &skel.CmdArgs{
 				ContainerID: "dummy",
@@ -1206,48 +1216,49 @@ var _ = Describe("route-override operations by conf", func() {
 	Context("ipv4/v6 mixed route manipulation", func() {
 		It("pass cni's check command", func() {
 			conf := []byte(`{
-			"name": "test",
-			"type": "route-override",
-			"cniVersion": "0.3.1",
-			"addroutes": [
-			{
-				"dst": "20.0.0.0/24"
-			}],
-			"prevResult": {
-				"interfaces": [
+				"name": "test",
+				"type": "route-override",
+				"cniVersion": "0.3.1",
+				"addroutes": [
 				{
-					"name": "dummy0", "sandbox":"netns"
+					"dst": "20.0.0.0/24"
 				}],
-				"ips": [
-				{
-					"version": "4",
-					"address": "10.0.0.2/24",
-					"gateway": "10.0.0.254",
-					"interface": 0
-				},
-				{
-					"version": "6",
-					"address": "2001:DB8:1::2/64",
-					"gateway": "2001:DB8:1::1",
-					"interface": 0
-				}],
-				"routes": [
-				{
-					"dst": "0.0.0.0/0",
-					"gw": "10.0.0.254"
-				},
-				{
-					"dst": "30.0.0.0/24"
-				},
-				{
-					"dst": "::/0"
-				},
-				{
-					"dst": "2001:DB8:2::/64",
-					"gw": "2001:DB8:1::ffff"
-				}]
-			}
-		}`)
+				"prevResult": {
+					"cniVersion": "0.3.1",
+					"interfaces": [
+					{
+						"name": "dummy0", "sandbox":"netns"
+					}],
+					"ips": [
+					{
+						"version": "4",
+						"address": "10.0.0.2/24",
+						"gateway": "10.0.0.254",
+						"interface": 0
+					},
+					{
+						"version": "6",
+						"address": "2001:DB8:1::2/64",
+						"gateway": "2001:DB8:1::1",
+						"interface": 0
+					}],
+					"routes": [
+					{
+						"dst": "0.0.0.0/0",
+						"gw": "10.0.0.254"
+					},
+					{
+						"dst": "30.0.0.0/24"
+					},
+					{
+						"dst": "::/0"
+					},
+					{
+						"dst": "2001:DB8:2::/64",
+						"gw": "2001:DB8:1::ffff"
+					}]
+				}
+			}`)
 
 			args := &skel.CmdArgs{
 				ContainerID: "dummy",
@@ -1321,48 +1332,49 @@ var _ = Describe("route-override operations by conf", func() {
 
 		It("check cni's check command with error", func() {
 			conf := []byte(`{
-			"name": "test",
-			"type": "route-override",
-			"cniVersion": "0.3.1",
-			"addroutes": [
-			{
-				"dst": "20.0.0.0/24"
-			}],
-			"prevResult": {
-				"interfaces": [
+				"name": "test",
+				"type": "route-override",
+				"cniVersion": "0.3.1",
+				"addroutes": [
 				{
-					"name": "dummy0", "sandbox":"netns"
+					"dst": "20.0.0.0/24"
 				}],
-				"ips": [
-				{
-					"version": "4",
-					"address": "10.0.0.2/24",
-					"gateway": "10.0.0.254",
-					"interface": 0
-				},
-				{
-					"version": "6",
-					"address": "2001:DB8:1::2/64",
-					"gateway": "2001:DB8:1::1",
-					"interface": 0
-				}],
-				"routes": [
-				{
-					"dst": "0.0.0.0/0",
-					"gw": "10.0.0.254"
-				},
-				{
-					"dst": "30.0.0.0/24"
-				},
-				{
-					"dst": "::/0"
-				},
-				{
-					"dst": "2001:DB8:2::/64",
-					"gw": "2001:DB8:1::ffff"
-				}]
-			}
-		}`)
+				"prevResult": {
+					"cniVersion": "0.3.1",
+					"interfaces": [
+					{
+						"name": "dummy0", "sandbox":"netns"
+					}],
+					"ips": [
+					{
+						"version": "4",
+						"address": "10.0.0.2/24",
+						"gateway": "10.0.0.254",
+						"interface": 0
+					},
+					{
+						"version": "6",
+						"address": "2001:DB8:1::2/64",
+						"gateway": "2001:DB8:1::1",
+						"interface": 0
+					}],
+					"routes": [
+					{
+						"dst": "0.0.0.0/0",
+						"gw": "10.0.0.254"
+					},
+					{
+						"dst": "30.0.0.0/24"
+					},
+					{
+						"dst": "::/0"
+					},
+					{
+						"dst": "2001:DB8:2::/64",
+						"gw": "2001:DB8:1::ffff"
+					}]
+				}
+			}`)
 
 			args := &skel.CmdArgs{
 				ContainerID: "dummy",
@@ -1436,49 +1448,50 @@ var _ = Describe("route-override operations by conf", func() {
 
 		It("skip cni's check command", func() {
 			conf := []byte(`{
-			"name": "test",
-			"type": "route-override",
-			"cniVersion": "0.3.1",
-			"addroutes": [
-			{
-				"dst": "20.0.0.0/24"
-			}],
-			"skipcheck": true,
-			"prevResult": {
-				"interfaces": [
+				"name": "test",
+				"type": "route-override",
+				"cniVersion": "0.3.1",
+				"addroutes": [
 				{
-					"name": "dummy0", "sandbox":"netns"
+					"dst": "20.0.0.0/24"
 				}],
-				"ips": [
-				{
-					"version": "4",
-					"address": "10.0.0.2/24",
-					"gateway": "10.0.0.254",
-					"interface": 0
-				},
-				{
-					"version": "6",
-					"address": "2001:DB8:1::2/64",
-					"gateway": "2001:DB8:1::1",
-					"interface": 0
-				}],
-				"routes": [
-				{
-					"dst": "0.0.0.0/0",
-					"gw": "10.0.0.254"
-				},
-				{
-					"dst": "30.0.0.0/24"
-				},
-				{
-					"dst": "::/0"
-				},
-				{
-					"dst": "2001:DB8:2::/64",
-					"gw": "2001:DB8:1::ffff"
-				}]
-			}
-		}`)
+				"skipcheck": true,
+				"prevResult": {
+					"cniVersion": "0.3.1",
+					"interfaces": [
+					{
+						"name": "dummy0", "sandbox":"netns"
+					}],
+					"ips": [
+					{
+						"version": "4",
+						"address": "10.0.0.2/24",
+						"gateway": "10.0.0.254",
+						"interface": 0
+					},
+					{
+						"version": "6",
+						"address": "2001:DB8:1::2/64",
+						"gateway": "2001:DB8:1::1",
+						"interface": 0
+					}],
+					"routes": [
+					{
+						"dst": "0.0.0.0/0",
+						"gw": "10.0.0.254"
+					},
+					{
+						"dst": "30.0.0.0/24"
+					},
+					{
+						"dst": "::/0"
+					},
+					{
+						"dst": "2001:DB8:2::/64",
+						"gw": "2001:DB8:1::ffff"
+					}]
+				}
+			}`)
 
 			args := &skel.CmdArgs{
 				ContainerID: "dummy",
@@ -1600,6 +1613,7 @@ var _ = Describe("route-override operations by args", func() {
 				}
 			},
 			"prevResult": {
+				"cniVersion": "0.3.1",
 				"interfaces": [
 				{
 					"name": "dummy0",
@@ -1684,7 +1698,7 @@ var _ = Describe("route-override operations by args", func() {
 				Expect(result.Interfaces[0].Name).To(Equal(IFNAME))
 				Expect(len(result.IPs)).To(Equal(1))
 				Expect(result.IPs[0].Address.String()).To(Equal("10.0.0.2/24"))
-				Expect(result.Routes).To(BeNil())
+				Expect(len(result.Routes)).To(Equal(0))
 
 				Expect(err).NotTo(HaveOccurred())
 
@@ -1721,6 +1735,7 @@ var _ = Describe("route-override operations by args", func() {
 				}
 			},
 			"prevResult": {
+				"cniVersion": "0.3.1",
 				"interfaces": [
 				{
 					"name": "dummy0",
@@ -1844,6 +1859,7 @@ var _ = Describe("route-override operations by args", func() {
 				}
 			},
 			"prevResult": {
+				"cniVersion": "0.3.1",
 				"interfaces": [
 				{
 					"name": "dummy0",
@@ -1961,6 +1977,7 @@ var _ = Describe("route-override operations by args", func() {
 				}
 			},
 			"prevResult": {
+				"cniVersion": "0.3.1",
 				"interfaces": [
 				{
 					"name": "dummy0",
@@ -2035,7 +2052,7 @@ var _ = Describe("route-override operations by args", func() {
 				Expect(result.Interfaces[0].Name).To(Equal(IFNAME))
 				Expect(len(result.IPs)).To(Equal(1))
 				Expect(result.IPs[0].Address.String()).To(Equal("2001:db8:1::2/64"))
-				Expect(result.Routes).To(BeNil())
+				Expect(len(result.Routes)).To(Equal(0))
 
 				Expect(err).NotTo(HaveOccurred())
 
@@ -2073,6 +2090,7 @@ var _ = Describe("route-override operations by args", func() {
 				}
 			},
 			"prevResult": {
+				"cniVersion": "0.3.1",
 				"interfaces": [
 				{
 					"name": "dummy0",
@@ -2188,6 +2206,7 @@ var _ = Describe("route-override operations by args", func() {
 				}
 			},
 			"prevResult": {
+				"cniVersion": "0.3.1",
 				"interfaces": [
 				{
 					"name": "dummy0", "sandbox":"netns"
