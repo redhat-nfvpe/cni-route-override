@@ -13,5 +13,6 @@ RUN rpm --import https://mirror.go-repo.io/centos/RPM-GPG-KEY-GO-REPO && \
     ./build_linux.sh
 
 FROM alpine
+LABEL org.opencontainers.image.source https://github.com/redhat-nfvpe/cni-route-override
 COPY --from=build /usr/src/cni-route-override/bin/route-override /
 WORKDIR /

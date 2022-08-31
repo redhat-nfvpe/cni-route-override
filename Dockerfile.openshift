@@ -17,6 +17,7 @@ RUN ./build_linux.sh
 WORKDIR /
 
 FROM openshift/origin-base
+LABEL org.opencontainers.image.source https://github.com/redhat-nfvpe/cni-route-override
 COPY --from=rhel7 /usr/src/route-override/bin/route-override /usr/src/route-override/rhel7/bin/route-override
 COPY --from=rhel7 /usr/src/route-override/bin/route-override /usr/src/route-override/bin/route-override
 COPY --from=rhel8 /usr/src/route-override/bin/route-override /usr/src/route-override/rhel8/bin/route-override
