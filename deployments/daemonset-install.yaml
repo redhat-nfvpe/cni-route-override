@@ -27,7 +27,7 @@ spec:
           effect: NoSchedule
       containers:
         - name: route-override
-          image: nfvpe/cni-route-override:latest
+          image: ghcr.io/redhat-nfvpe/cni-route-override:latest
           command: ["/bin/sh"]
           args:
             - "-c"
