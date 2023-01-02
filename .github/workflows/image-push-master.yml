@@ -4,8 +4,8 @@ on:
     branches:
       - master
 jobs:
-  push-amd64:
-    name: Image push/amd64
+  push:
+    name: Image push
     runs-on: ubuntu-latest
     steps:
       - name: Check out code into the Go module directory
@@ -29,9 +29,10 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:latest-amd64
-            ghcr.io/${{ github.repository }}:snapshot-amd64
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:snapshot
           file: Dockerfile
+          platforms: linux/amd64,linux/arm64
 
   push-origin:
     name: Image push/origin

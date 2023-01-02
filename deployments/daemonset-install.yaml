@@ -20,8 +20,6 @@ spec:
         tier: node
         app: route-override
     spec:
-      nodeSelector:
-        beta.kubernetes.io/arch: amd64
       tolerations:
         - operator: Exists
           effect: NoSchedule

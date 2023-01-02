@@ -1,5 +1,5 @@
 # This Dockerfile is used to build the image available on DockerHub
-FROM centos:centos7 as build
+FROM centos:centos8 as build
 
 # Add everything
 ADD . /usr/src/cni-route-override
