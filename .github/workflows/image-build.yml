@@ -1,8 +1,8 @@
 name: Image build
 on: [pull_request]
 jobs:
-  build-amd64:
-    name: Image build/amd64 thin plugin
+  build:
+    name: Image build thin plugin
     runs-on: ubuntu-latest
     steps:
       - name: Check out code into the Go module directory
@@ -16,8 +16,9 @@ jobs:
         with:
           context: .
           push: false
-          tags: ghcr.io/${{ github.repository }}:latest-amd64
+          tags: ghcr.io/${{ github.repository }}:latest
           file: Dockerfile
+          platforms: linux/amd64,linux/arm64
 
   build-origin:
     name: Image build/origin
