@@ -2,6 +2,7 @@
 *.o
 *.a
 *.so
+okd-builder.Dockerfile
 
 # Folders
 _obj
@@ -28,5 +29,6 @@ gopath/
 .vagrant
 .idea
 /release-*
+root/
 
 *~

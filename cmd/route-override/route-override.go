@@ -15,7 +15,6 @@
 // This is a "meta-plugin". It reads in its own netconf, it does not create
 // any network interface but just changes route information given from
 // previous cni plugins
-
 package main
 
 import (
@@ -65,11 +64,11 @@ type IPAMArgs struct {
 }
 
 /*
-type RouteOverrideArgs struct {
-	types.CommonArgs
-}
+	type RouteOverrideArgs struct {
+		types.CommonArgs
+	}
 */
-func parseConf(data []byte, envArgs string) (*RouteOverrideConfig, error) {
+func parseConf(data []byte, _ string) (*RouteOverrideConfig, error) {
 	conf := RouteOverrideConfig{FlushRoutes: false}
 
 	if err := json.Unmarshal(data, &conf); err != nil {
@@ -309,7 +308,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	return types.PrintResult(newResult, overrideConf.CNIVersion)
 }
 
-func cmdDel(args *skel.CmdArgs) error {
+func cmdDel(_ *skel.CmdArgs) error {
 	// TODO: the settings are not reverted to the previous values. Reverting the
 	// settings is not useful when the whole container goes away but it could be
 	// useful in scenarios where plugins are added and removed at runtime.

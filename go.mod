@@ -1,6 +1,6 @@
 module github.com/redhat-nfvpe/cni-route-override
 
-go 1.17
+go 1.22
 
 require (
 	github.com/containernetworking/cni v1.1.2
@@ -14,7 +14,7 @@ require (
 	github.com/fsnotify/fsnotify v1.4.9 // indirect
 	github.com/nxadm/tail v1.4.8 // indirect
 	github.com/vishvananda/netns v0.0.0-20180720170159-13995c7128cc // indirect
-	golang.org/x/net v0.0.0-20220722155237-a158d28d115b // indirect
+	golang.org/x/net v0.31.0 // indirect
 	golang.org/x/sys v0.5.0 // indirect
 	golang.org/x/text v0.7.0 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect

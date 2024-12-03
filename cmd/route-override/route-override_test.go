@@ -14,6 +14,8 @@
 
 package main
 
+// disable dot-imports only for testing
+//revive:disable:dot-imports
 import (
 	//"fmt"
 	//"os"
