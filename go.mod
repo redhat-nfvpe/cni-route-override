@@ -4,7 +4,7 @@ go 1.22
 
 require (
 	github.com/containernetworking/cni v1.1.2
-	github.com/containernetworking/plugins v0.8.3
+	github.com/containernetworking/plugins v0.8.6
 	github.com/onsi/ginkgo v1.16.4
 	github.com/onsi/gomega v1.17.0
 	github.com/vishvananda/netlink v1.0.0
