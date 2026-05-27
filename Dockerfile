@@ -4,6 +4,8 @@ FROM golang:1.23 AS build
 # Add everything
 ADD . /usr/src/cni-route-override
 
+ENV CGO_ENABLED=0
+
 RUN cd /usr/src/cni-route-override && \
     ./build_linux.sh
 
