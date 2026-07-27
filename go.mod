@@ -1,6 +1,6 @@
 module github.com/redhat-nfvpe/cni-route-override
 
-go 1.22
+go 1.26.0
 
 require (
 	github.com/containernetworking/cni v1.1.2
