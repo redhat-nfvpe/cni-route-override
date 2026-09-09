@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/containernetworking/cni/pkg/skel"
+	"github.com/containernetworking/cni/pkg/types"
 	current "github.com/containernetworking/cni/pkg/types/100"
 	"github.com/containernetworking/plugins/pkg/ns"
 	"github.com/containernetworking/plugins/pkg/testutils"
@@ -73,6 +74,62 @@ func testHasRoute(routes []netlink.Route, dst *net.IPNet) bool {
 
 	return false
 }
+
+func testAddECMPRoute(link netlink.Link, dst *net.IPNet, gws []net.IP) error {
+	nexthops := make([]*netlink.NexthopInfo, 0, len(gws))
+	for _, gw := range gws {
+		nexthops = append(nexthops, &netlink.NexthopInfo{
+			LinkIndex: link.Attrs().Index,
+			Gw:        gw,
+			Hops:      0,
+		})
+	}
+	return netlink.RouteAdd(&netlink.Route{
+		Scope:     netlink.SCOPE_UNIVERSE,
+		Dst:       dst,
+		MultiPath: nexthops,
+	})
+}
+
+func testGetECMPNexthops(dst *net.IPNet) int {
+	family := netlink.FAMILY_V4
+	if dst.IP.To4() == nil {
+		family = netlink.FAMILY_V6
+	}
+	routes, err := netlink.RouteListFiltered(family, &netlink.Route{Dst: dst}, netlink.RT_FILTER_DST)
+	if err != nil || len(routes) == 0 {
+		return 0
+	}
+	return len(routes[0].MultiPath)
+}
+
+var _ = Describe("OverrideRoute helpers", func() {
+	It("merges gw and gws with gw first", func() {
+		route := &OverrideRoute{
+			Route: types.Route{GW: net.ParseIP("10.0.0.1")},
+			GWs:   []net.IP{net.ParseIP("10.0.0.2"), net.ParseIP("10.0.0.3")},
+		}
+		expect := []string{"10.0.0.1", "10.0.0.2", "10.0.0.3"}
+		merged := route.mergedGateways()
+		Expect(len(merged)).To(Equal(len(expect)))
+		for i, ip := range merged {
+			Expect(ip.String()).To(Equal(expect[i]))
+		}
+	})
+
+	It("deduplicates gateways when gw overlaps gws", func() {
+		route := &OverrideRoute{
+			Route: types.Route{GW: net.ParseIP("10.0.0.1")},
+			GWs:   []net.IP{net.ParseIP("10.0.0.1"), net.ParseIP("10.0.0.2")},
+		}
+		merged := route.mergedGateways()
+		expect := []string{"10.0.0.1", "10.0.0.2"}
+		Expect(len(merged)).To(Equal(len(expect)))
+		for i, ip := range merged {
+			Expect(ip.String()).To(Equal(expect[i]))
+		}
+	})
+})
 
 var _ = Describe("route-override operations by conf, cniVersion:0.4.0", func() {
 	const IFNAME string = "dummy0"
@@ -2293,6 +2350,219 @@ var _ = Describe("route-override operations by args", func() {
 				Expect(testHasRoute(routes, route1)).To(Equal(true))
 				Expect(testHasRoute(routes, nil)).To(Equal(true))
 
+				return nil
+			})
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+})
+
+var _ = Describe("route-override ECMP operations", func() {
+	const IFNAME string = "dummy0"
+
+	var originalNS ns.NetNS
+	var targetNS ns.NetNS
+
+	BeforeEach(func() {
+		var err error
+		originalNS, err = testutils.NewNS()
+		Expect(err).NotTo(HaveOccurred())
+
+		targetNS, err = testutils.NewNS()
+		Expect(err).NotTo(HaveOccurred())
+
+		err = targetNS.Do(func(ns.NetNS) error {
+			defer GinkgoRecover()
+			err = netlink.LinkAdd(&netlink.Dummy{
+				LinkAttrs: netlink.LinkAttrs{Name: IFNAME},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			_, err = netlink.LinkByName(IFNAME)
+			Expect(err).NotTo(HaveOccurred())
+			return nil
+		})
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	AfterEach(func() {
+		Expect(originalNS.Close()).To(Succeed())
+	})
+
+	Context("IPv4 ECMP route manipulation", func() {
+		It("check addroutes creates ECMP route with multiple gateways", func() {
+			conf := []byte(`{
+				"name": "test",
+				"type": "route-override",
+				"cniVersion": "0.3.1",
+				"addroutes": [
+				{
+					"dst": "20.0.0.0/24",
+					"gws": ["10.0.0.1", "10.0.0.254"]
+				}],
+				"prevResult": {
+					"cniVersion": "0.3.1",
+					"interfaces": [{"name": "dummy0", "sandbox":"netns"}],
+					"ips": [{"version": "4", "address": "10.0.0.2/24", "gateway": "10.0.0.1", "interface": 0}],
+					"routes": [{"dst": "0.0.0.0/0", "gw": "10.0.0.1"}]
+				}
+			}`)
+
+			args := &skel.CmdArgs{
+				ContainerID: "dummy",
+				Netns:       targetNS.Path(),
+				IfName:      IFNAME,
+				StdinData:   conf,
+			}
+
+			err := targetNS.Do(func(ns.NetNS) error {
+				defer GinkgoRecover()
+				link, err := netlink.LinkByName(IFNAME)
+				Expect(err).NotTo(HaveOccurred())
+				err = netlink.LinkSetUp(link)
+				Expect(err).NotTo(HaveOccurred())
+				err = testAddAddr(link, net.IPv4(10, 0, 0, 2), net.CIDRMask(24, 32))
+				Expect(err).NotTo(HaveOccurred())
+				err = testAddRoute(link, net.IPv4(0, 0, 0, 0), net.CIDRMask(0, 0), net.IPv4(10, 0, 0, 1))
+				Expect(err).NotTo(HaveOccurred())
+				return nil
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			err = originalNS.Do(func(ns.NetNS) error {
+				defer GinkgoRecover()
+				_, _, err := testutils.CmdAddWithArgs(args, func() error {
+					return cmdAdd(args)
+				})
+				Expect(err).NotTo(HaveOccurred())
+				return nil
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			err = targetNS.Do(func(ns.NetNS) error {
+				defer GinkgoRecover()
+				_, ecmpDst, _ := net.ParseCIDR("20.0.0.0/24")
+				Expect(testGetECMPNexthops(ecmpDst)).To(Equal(2))
+				return nil
+			})
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("check delroutes removes ECMP route", func() {
+			conf := []byte(`{
+				"name": "test",
+				"type": "route-override",
+				"cniVersion": "0.3.1",
+				"delroutes": [
+				{
+					"dst": "20.0.0.0/24"
+				}],
+				"prevResult": {
+					"cniVersion": "0.3.1",
+					"interfaces": [{"name": "dummy0", "sandbox":"netns"}],
+					"ips": [{"version": "4", "address": "10.0.0.2/24", "gateway": "10.0.0.1", "interface": 0}],
+					"routes": [{"dst": "0.0.0.0/0", "gw": "10.0.0.1"}]
+				}
+			}`)
+
+			args := &skel.CmdArgs{
+				ContainerID: "dummy",
+				Netns:       targetNS.Path(),
+				IfName:      IFNAME,
+				StdinData:   conf,
+			}
+
+			err := targetNS.Do(func(ns.NetNS) error {
+				defer GinkgoRecover()
+				link, err := netlink.LinkByName(IFNAME)
+				Expect(err).NotTo(HaveOccurred())
+				err = netlink.LinkSetUp(link)
+				Expect(err).NotTo(HaveOccurred())
+				err = testAddAddr(link, net.IPv4(10, 0, 0, 2), net.CIDRMask(24, 32))
+				Expect(err).NotTo(HaveOccurred())
+				err = testAddRoute(link, net.IPv4(0, 0, 0, 0), net.CIDRMask(0, 0), net.IPv4(10, 0, 0, 1))
+				Expect(err).NotTo(HaveOccurred())
+
+				_, ecmpDst, _ := net.ParseCIDR("20.0.0.0/24")
+				err = testAddECMPRoute(link, ecmpDst, []net.IP{net.IPv4(10, 0, 0, 1), net.IPv4(10, 0, 0, 254)})
+				Expect(err).NotTo(HaveOccurred())
+				return nil
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			err = originalNS.Do(func(ns.NetNS) error {
+				defer GinkgoRecover()
+				_, _, err := testutils.CmdAddWithArgs(args, func() error {
+					return cmdAdd(args)
+				})
+				Expect(err).NotTo(HaveOccurred())
+				return nil
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			err = targetNS.Do(func(ns.NetNS) error {
+				defer GinkgoRecover()
+				_, ecmpDst, _ := net.ParseCIDR("20.0.0.0/24")
+				Expect(testGetECMPNexthops(ecmpDst)).To(Equal(0))
+				return nil
+			})
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	Context("IPv6 ECMP route manipulation", func() {
+		It("check addroutes creates IPv6 ECMP route", func() {
+			conf := []byte(`{
+				"name": "test",
+				"type": "route-override",
+				"cniVersion": "0.3.1",
+				"addroutes": [
+				{
+					"dst": "2001:DB8:2::/64",
+					"gws": ["2001:DB8:1::1", "2001:DB8:1::ffff"]
+				}],
+				"prevResult": {
+					"cniVersion": "0.3.1",
+					"interfaces": [{"name": "dummy0", "sandbox":"netns"}],
+					"ips": [{"version": "6", "address": "2001:DB8:1::2/64", "gateway": "2001:DB8:1::1", "interface": 0}],
+					"routes": [{"dst": "::/0"}]
+				}
+			}`)
+
+			args := &skel.CmdArgs{
+				ContainerID: "dummy",
+				Netns:       targetNS.Path(),
+				IfName:      IFNAME,
+				StdinData:   conf,
+			}
+
+			err := targetNS.Do(func(ns.NetNS) error {
+				defer GinkgoRecover()
+				link, err := netlink.LinkByName(IFNAME)
+				Expect(err).NotTo(HaveOccurred())
+				err = netlink.LinkSetUp(link)
+				Expect(err).NotTo(HaveOccurred())
+				err = testAddAddr(link, net.ParseIP("2001:DB8:1::2"), net.CIDRMask(64, 128))
+				Expect(err).NotTo(HaveOccurred())
+				err = testAddRoute(link, net.ParseIP("::"), net.CIDRMask(0, 0), net.ParseIP("2001:DB8:1::1"))
+				Expect(err).NotTo(HaveOccurred())
+				return nil
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			err = originalNS.Do(func(ns.NetNS) error {
+				defer GinkgoRecover()
+				_, _, err := testutils.CmdAddWithArgs(args, func() error {
+					return cmdAdd(args)
+				})
+				Expect(err).NotTo(HaveOccurred())
+				return nil
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			err = targetNS.Do(func(ns.NetNS) error {
+				defer GinkgoRecover()
+				_, ecmpDst, _ := net.ParseCIDR("2001:DB8:2::/64")
+				Expect(testGetECMPNexthops(ecmpDst)).To(Equal(2))
 				return nil
 			})
 			Expect(err).NotTo(HaveOccurred())

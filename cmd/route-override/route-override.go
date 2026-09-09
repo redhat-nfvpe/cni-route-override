@@ -37,17 +37,84 @@ import (
 // + only checko route/dst
 //go build ./cmd/route-override/
 
+// OverrideRoute mirrors types.Route but adds optional gws for ECMP support.
+// Remove this shim once upstream CNI types.Route officially exposes gws.
+type OverrideRoute struct {
+	types.Route
+	GWs []net.IP `json:"gws,omitempty"`
+}
+
+type overrideRouteAlias struct {
+	Dst types.IPNet `json:"dst"`
+	GW  net.IP      `json:"gw,omitempty"`
+	GWs []net.IP    `json:"gws,omitempty"`
+}
+
+func (r *OverrideRoute) UnmarshalJSON(data []byte) error {
+	alias := overrideRouteAlias{}
+	if err := json.Unmarshal(data, &alias); err != nil {
+		return err
+	}
+	r.Route = types.Route{
+		Dst: net.IPNet(alias.Dst),
+		GW:  alias.GW,
+	}
+	r.GWs = alias.GWs
+	return nil
+}
+
+func (r OverrideRoute) MarshalJSON() ([]byte, error) {
+	alias := overrideRouteAlias{
+		Dst: types.IPNet(r.Dst),
+		GW:  r.GW,
+		GWs: r.GWs,
+	}
+	return json.Marshal(alias)
+}
+
+func (r *OverrideRoute) toTypesRoute() *types.Route {
+	if r == nil {
+		return nil
+	}
+	copy := r.Route
+	if copy.GW == nil && len(r.GWs) > 0 {
+		copy.GW = r.GWs[0]
+	}
+	return &copy
+}
+
+func (r *OverrideRoute) mergedGateways() []net.IP {
+	result := []net.IP{}
+	seen := map[string]struct{}{}
+	add := func(ip net.IP) {
+		if ip == nil {
+			return
+		}
+		key := ip.String()
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		result = append(result, ip)
+	}
+	add(r.GW)
+	for _, gw := range r.GWs {
+		add(gw)
+	}
+	return result
+}
+
 // RouteOverrideConfig represents the network route-override configuration
 type RouteOverrideConfig struct {
 	types.NetConf
 
 	PrevResult *current.Result `json:"-"`
 
-	FlushRoutes  bool           `json:"flushroutes,omitempty"`
-	FlushGateway bool           `json:"flushgateway,omitempty"`
-	DelRoutes    []*types.Route `json:"delroutes"`
-	AddRoutes    []*types.Route `json:"addroutes"`
-	SkipCheck    bool           `json:"skipcheck,omitempty"`
+	FlushRoutes  bool             `json:"flushroutes,omitempty"`
+	FlushGateway bool             `json:"flushgateway,omitempty"`
+	DelRoutes    []*OverrideRoute `json:"delroutes"`
+	AddRoutes    []*OverrideRoute `json:"addroutes"`
+	SkipCheck    bool             `json:"skipcheck,omitempty"`
 
 	Args *struct {
 		A *IPAMArgs `json:"cni"`
@@ -56,11 +123,11 @@ type RouteOverrideConfig struct {
 
 // IPAMArgs represents CNI argument conventions for the plugin
 type IPAMArgs struct {
-	FlushRoutes  *bool          `json:"flushroutes,omitempty"`
-	FlushGateway *bool          `json:"flushgateway,omitempty"`
-	DelRoutes    []*types.Route `json:"delroutes,omitempty"`
-	AddRoutes    []*types.Route `json:"addroutes,omitempty"`
-	SkipCheck    *bool          `json:"skipcheck,omitempty"`
+	FlushRoutes  *bool            `json:"flushroutes,omitempty"`
+	FlushGateway *bool            `json:"flushgateway,omitempty"`
+	DelRoutes    []*OverrideRoute `json:"delroutes,omitempty"`
+	AddRoutes    []*OverrideRoute `json:"addroutes,omitempty"`
+	SkipCheck    *bool            `json:"skipcheck,omitempty"`
 }
 
 /*
@@ -68,7 +135,7 @@ type IPAMArgs struct {
 		types.CommonArgs
 	}
 */
-func parseConf(data []byte, _ string) (*RouteOverrideConfig, error) {
+func parseConf(data []byte, envArgs string) (*RouteOverrideConfig, error) {
 	conf := RouteOverrideConfig{FlushRoutes: false}
 
 	if err := json.Unmarshal(data, &conf); err != nil {
@@ -173,44 +240,95 @@ func deleteGWRoute(res *current.Result) error {
 	return err
 }
 
-func deleteRoute(route *types.Route, res *current.Result) error {
-	var err error
-	// fallback to eth0 if there is no interface in result
+func deleteRoute(route *OverrideRoute, res *current.Result) error {
+	family := netlink.FAMILY_V4
+	if route.Dst.IP.To4() == nil {
+		family = netlink.FAMILY_V6
+	}
+	filter := &netlink.Route{Dst: &route.Dst}
+	routes, err := netlink.RouteListFiltered(family, filter, netlink.RT_FILTER_DST)
+	if err == nil && len(routes) != 0 {
+		var lastErr error
+		for _, nlroute := range routes {
+			if err := netlink.RouteDel(&nlroute); err != nil {
+				lastErr = err
+			}
+		}
+		return lastErr
+	}
+
+	// fallback to interface walks for older kernels or unexpected errors
+	var lastErr error
 	if res.Interfaces == nil {
 		link, _ := netlink.LinkByName("eth0")
-		routes, _ := netlink.RouteList(link, netlink.FAMILY_ALL)
-		for _, nlroute := range routes {
+		netRoutes, _ := netlink.RouteList(link, netlink.FAMILY_ALL)
+		for _, nlroute := range netRoutes {
 			if nlroute.Dst != nil &&
 				nlroute.Dst.IP.Equal(route.Dst.IP) &&
 				nlroute.Dst.Mask.String() == route.Dst.Mask.String() {
-				err = netlink.RouteDel(&nlroute)
+				if err := netlink.RouteDel(&nlroute); err != nil {
+					lastErr = err
+				}
 			}
 		}
-	} else {
-		for _, netif := range res.Interfaces {
-			if netif.Sandbox != "" {
-				link, _ := netlink.LinkByName(netif.Name)
-				routes, _ := netlink.RouteList(link, netlink.FAMILY_ALL)
-				for _, nlroute := range routes {
-					if nlroute.Dst != nil &&
-						nlroute.Dst.IP.Equal(route.Dst.IP) &&
-						nlroute.Dst.Mask.String() == route.Dst.Mask.String() {
-						err = netlink.RouteDel(&nlroute)
-					}
+		return lastErr
+	}
+
+	for _, netif := range res.Interfaces {
+		if netif.Sandbox == "" {
+			continue
+		}
+		link, _ := netlink.LinkByName(netif.Name)
+		netRoutes, _ := netlink.RouteList(link, netlink.FAMILY_ALL)
+		for _, nlroute := range netRoutes {
+			if nlroute.Dst != nil &&
+				nlroute.Dst.IP.Equal(route.Dst.IP) &&
+				nlroute.Dst.Mask.String() == route.Dst.Mask.String() {
+				if err := netlink.RouteDel(&nlroute); err != nil {
+					lastErr = err
 				}
 			}
 		}
 	}
 
-	return err
+	return lastErr
 }
 
-func addRoute(dev netlink.Link, route *types.Route) error {
+func addRoute(dev netlink.Link, route *OverrideRoute) error {
+	if len(route.GWs) > 0 {
+		return addMultiPathRoute(dev, route)
+	}
 	return netlink.RouteAdd(&netlink.Route{
 		LinkIndex: dev.Attrs().Index,
 		Scope:     netlink.SCOPE_UNIVERSE,
 		Dst:       &route.Dst,
 		Gw:        route.GW,
+	})
+}
+
+func addMultiPathRoute(dev netlink.Link, route *OverrideRoute) error {
+	gateways := route.mergedGateways()
+	if len(gateways) == 0 {
+		return fmt.Errorf("addroutes: gws must not be empty")
+	}
+	nexthops := make([]*netlink.NexthopInfo, 0, len(gateways))
+	for _, gw := range gateways {
+		routes, err := netlink.RouteGet(gw)
+		if err != nil || len(routes) == 0 {
+			return fmt.Errorf("addroutes: cannot resolve interface for gw %v: %v", gw, err)
+		}
+		if routes[0].LinkIndex != dev.Attrs().Index {
+			return fmt.Errorf("addroutes: gw %v is not reachable via %s", gw, dev.Attrs().Name)
+		}
+		nexthops = append(nexthops, &netlink.NexthopInfo{
+			LinkIndex: routes[0].LinkIndex,
+			Gw:        gw,
+		})
+	}
+	return netlink.RouteAdd(&netlink.Route{
+		Scope:     netlink.SCOPE_UNIVERSE,
+		Dst:       &route.Dst,
+		MultiPath: nexthops,
 	})
 }
 
@@ -229,9 +347,9 @@ func processRoutes(netnsname string, conf *RouteOverrideConfig) (*current.Result
 	if conf.FlushGateway {
 		// add "0.0.0.0/0" into delRoute to remove it from routing table/result
 		_, gwRoute, _ := net.ParseCIDR("0.0.0.0/0")
-		conf.DelRoutes = append(conf.DelRoutes, &types.Route{Dst: *gwRoute})
+		conf.DelRoutes = append(conf.DelRoutes, &OverrideRoute{Route: types.Route{Dst: *gwRoute}})
 		_, gwRoute, _ = net.ParseCIDR("::/0")
-		conf.DelRoutes = append(conf.DelRoutes, &types.Route{Dst: *gwRoute})
+		conf.DelRoutes = append(conf.DelRoutes, &OverrideRoute{Route: types.Route{Dst: *gwRoute}})
 
 		// delete given gateway address
 		for _, ips := range res.IPs {
@@ -244,6 +362,7 @@ func processRoutes(netnsname string, conf *RouteOverrideConfig) (*current.Result
 	}
 
 	newRoutes := []*types.Route{}
+	deletedRoutes := map[string]bool{}
 	err = netns.Do(func(_ ns.NetNS) error {
 		// Flush route if required
 		if !conf.FlushRoutes {
@@ -256,6 +375,7 @@ func processRoutes(netnsname string, conf *RouteOverrideConfig) (*current.Result
 						if err != nil {
 							fmt.Fprintf(os.Stderr, "failed to delete route %v: %v", delroute, err)
 						}
+						deletedRoutes[delroute.Dst.String()] = true
 						continue NEXT
 					}
 
@@ -270,6 +390,16 @@ func processRoutes(netnsname string, conf *RouteOverrideConfig) (*current.Result
 			deleteGWRoute(res)
 		}
 
+		for _, delroute := range conf.DelRoutes {
+			key := delroute.Dst.String()
+			if deletedRoutes[key] {
+				continue
+			}
+			if err := deleteRoute(delroute, res); err != nil {
+				fmt.Fprintf(os.Stderr, "failed to delete route %v: %v", delroute, err)
+			}
+		}
+
 		// Get container IF name
 		var containerIFName string
 		for _, i := range res.Interfaces {
@@ -281,7 +411,9 @@ func processRoutes(netnsname string, conf *RouteOverrideConfig) (*current.Result
 		// Add route
 		dev, _ := netlink.LinkByName(containerIFName)
 		for _, route := range conf.AddRoutes {
-			newRoutes = append(newRoutes, route)
+			if tr := route.toTypesRoute(); tr != nil {
+				newRoutes = append(newRoutes, tr)
+			}
 			if err := addRoute(dev, route); err != nil {
 				fmt.Fprintf(os.Stderr, "failed to add route: %v: %v", route, err)
 			}
@@ -308,7 +440,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 	return types.PrintResult(newResult, overrideConf.CNIVersion)
 }
 
-func cmdDel(_ *skel.CmdArgs) error {
+func cmdDel(args *skel.CmdArgs) error {
 	// TODO: the settings are not reverted to the previous values. Reverting the
 	// settings is not useful when the whole container goes away but it could be
 	// useful in scenarios where plugins are added and removed at runtime.

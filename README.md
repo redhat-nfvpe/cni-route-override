@@ -52,13 +52,30 @@ kubectl create -f deployments/daemonset-install.yaml
 }
 ```
 
+### ECMP route example
+
+`addroutes` can now express ECMP intent directly by providing a `gws` array:
+
+```
+{
+    "type": "route-override",
+    "addroutes": [
+    {
+        "dst": "10.200.0.0/24",
+        "gws": ["192.168.200.1", "192.168.200.2"]
+    }]
+}
+```
+
+The same structure can be used inside `delroutes` to flush previously installed ECMP entries without adding new knobs.
+
 ## Configuration Reference
 
 * `type`: (string, required): "routing-override"
 * `flushroutes`: (bool, optional): true if you flush all routes.
 * `flushgateway`: (bool, optional): true if you flush default route (gateway).
-* `delroutes`: (object, optional): list of routes add to the container namespace. Each route is a dictionary with "dst" and optional "gw" fields. If "gw" is omitted, value of "gateway" will be used.
-* `addroutes`: (object, optional): list of routes add to the container namespace. Each route is a dictionary with "dst" and optional "gw" fields. If "gw" is omitted, value of "gateway" will be used.
+* `delroutes`: (object, optional): list of routes add to the container namespace. Each route is a dictionary with "dst", optional "gw", and optional "gws" (array) fields. Set `gws` to target ECMP routes without introducing a new command. If both `gw` and `gws` are omitted, the interface gateway value will be used.
+* `addroutes`: (object, optional): list of routes add to the container namespace. Each route is a dictionary with "dst", optional "gw", and optional "gws" (array) fields. When `gws` is provided the plugin programs an ECMP route that fans out to every gateway listed. If `gw` and `gws` are omitted, the interface gateway value will be used.
 * `skipcheck`: (bool, optional): true if you want to skip CNI's check command. Please set true if you will change routes after its launch
 
 ## Process Sequence
@@ -76,6 +93,5 @@ The following [args conventions](https://github.com/containernetworking/cni/blob
 
 * `flushroutes`: (bool, optional): true if you flush all routes (except interface routes and link-local).
 * `flushgateway`: (bool, optional): true if you flush default route (gateway).
-* `delroutes`: (object, optional): list of routes add to the container namespace. Each route is a dictionary with "dst" and optional "gw" fields. If "gw" is omitted, value of "gateway" will be used.
-* `addroutes`: (object, optional): list of routes add to the container namespace. Each route is a dictionary with "dst" and optional "gw" fields. If "gw" is omitted, value of "gateway" will be used.
-
+* `delroutes`: (object, optional): list of routes add to the container namespace. Each route is a dictionary with "dst", optional "gw", and optional "gws" (array) fields. Set `gws` to describe ECMP routes that should be removed without relying on a separate command.
+* `addroutes`: (object, optional): list of routes add to the container namespace. Each route is a dictionary with "dst", optional "gw", and optional "gws" (array) fields. Providing `gws` makes `addroutes` capable of adding ECMP routes directly.
